@@ -67,7 +67,10 @@ Runs only when manually triggered from GitHub Actions. It builds a Release devic
 20. Launch `ProCamLinkStudio`.
 21. Grant camera permission.
 22. Verify the live preview and camera switching.
-23. Record test results: iPhone model, iOS version, cameras shown, preview status, rotation behavior, and any crash or permission issue.
+23. On Windows, open OBS and add a Media Source for an SRT listener endpoint such as `srt://:9000?mode=listener`.
+24. In the iPhone app Stream panel, set caller mode, enter the Windows LAN IP and matching port, then start SRT.
+25. Confirm OBS receives video and audio.
+26. Record test results: iPhone model, iOS version, cameras shown, preview status, rotation behavior, SRT endpoint, OBS video/audio status, reconnect behavior, and any crash or permission issue.
 
 ## Privacy Strings Preserved
 

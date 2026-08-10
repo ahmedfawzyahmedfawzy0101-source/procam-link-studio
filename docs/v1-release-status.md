@@ -271,6 +271,30 @@ Not claimed complete in this milestone:
 - Encoder-to-muxer-to-SRT live wiring.
 - OBS Direct compatibility validation.
 
+## Milestone 16 Scope
+
+Implemented in this milestone:
+
+- Live iOS Stream panel with SRT caller/listener mode, host, port, latency, stream ID, passphrase, and start/stop.
+- VideoToolbox keyframe parameter-set extraction for H.264 SPS/PPS and HEVC VPS/SPS/PPS.
+- Annex B access-unit conversion from VideoToolbox length-prefixed NAL output.
+- Live capture video frames wired into `VideoToolboxEncoder`.
+- Encoded H.264/HEVC video wired into `MPEGTransportStreamMuxer`.
+- Microphone sample buffers wired into `AACEncoder`.
+- AAC-LC encoding through `AudioConverter`.
+- ADTS framing for AAC packets.
+- MPEG-TS audio/video packets wired into `SRTTransport`.
+- Real SRT sending through the Haivision libsrt C bridge.
+- Stream telemetry for state, bitrate, RTT, loss, queue depth, dropped frames, sent bytes, and encoded frames.
+- iOS and Windows CI green after SRT, video streaming, and AAC wiring.
+
+Not claimed complete in this milestone:
+
+- Real iPhone to OBS validation.
+- Windows SRT receive/demux/decode.
+- Windows virtual camera output.
+- Final v1.0 IPA.
+
 ## No Fake Controls Policy
 
 The UI should expose only controls with real backing behavior. Features that need later pipeline work are tracked here and should not appear as working controls until implemented.
