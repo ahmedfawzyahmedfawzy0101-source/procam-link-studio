@@ -101,6 +101,14 @@ Implemented in this milestone:
 - Custom profile persistence with `UserDefaults`.
 - Last custom profile delete.
 
+## Milestone 5 Scope
+
+Implemented in this milestone:
+
+- Explicit orientation handling for the processed preview renderer.
+- Portrait, portrait upside-down, landscape left, and landscape right map to Core Image EXIF orientation before fit/fill scaling.
+- Processed preview no longer relies on `AVCaptureVideoPreviewLayer` for orientation.
+
 Not claimed complete in this milestone:
 
 - Histogram/RGB histogram/waveform/zebras/focus peaking rendering.

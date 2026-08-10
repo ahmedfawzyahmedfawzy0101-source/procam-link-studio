@@ -39,7 +39,11 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
         view.delegate = context.coordinator
 
         context.coordinator.attach(to: view)
-        context.coordinator.update(fillMode: cameraSession.previewFillMode, adjustments: cameraSession.imageAdjustments)
+        context.coordinator.update(
+            fillMode: cameraSession.previewFillMode,
+            orientation: view.previewOrientation,
+            adjustments: cameraSession.imageAdjustments
+        )
         context.coordinator.tapHandler = tapHandler
         cameraSession.setFrameConsumer(context.coordinator)
 
@@ -50,7 +54,11 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: MTKView, context: Context) {
-        context.coordinator.update(fillMode: cameraSession.previewFillMode, adjustments: cameraSession.imageAdjustments)
+        context.coordinator.update(
+            fillMode: cameraSession.previewFillMode,
+            orientation: uiView.previewOrientation,
+            adjustments: cameraSession.imageAdjustments
+        )
         context.coordinator.tapHandler = tapHandler
         cameraSession.setFrameConsumer(context.coordinator)
     }
@@ -64,6 +72,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
     private var commandQueue: MTLCommandQueue?
     private var latestPixelBuffer: CVPixelBuffer?
     private var fillMode: PreviewFillMode = .fill
+    private var orientation: PreviewOrientation = .portrait
     private var adjustments = ImageAdjustmentState.neutral
     private let stateQueue = DispatchQueue(label: "studio.procamlink.preview.renderer")
 
@@ -76,9 +85,10 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
         commandQueue = device.makeCommandQueue()
     }
 
-    func update(fillMode: PreviewFillMode, adjustments: ImageAdjustmentState) {
+    func update(fillMode: PreviewFillMode, orientation: PreviewOrientation, adjustments: ImageAdjustmentState) {
         stateQueue.async {
             self.fillMode = fillMode
+            self.orientation = orientation
             self.adjustments = adjustments
         }
     }
@@ -103,14 +113,15 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             return
         }
 
-        let snapshot = stateQueue.sync { (latestPixelBuffer, fillMode, adjustments) }
+        let snapshot = stateQueue.sync { (latestPixelBuffer, fillMode, orientation, adjustments) }
         guard let pixelBuffer = snapshot.0 else {
             return
         }
 
         autoreleasepool {
             var image = CIImage(cvPixelBuffer: pixelBuffer)
-            image = apply(adjustments: snapshot.2, to: image)
+                .oriented(forExifOrientation: snapshot.2.exifOrientation)
+            image = apply(adjustments: snapshot.3, to: image)
             image = image.transformedForDisplay(in: view.drawableSize, fillMode: snapshot.1)
 
             ciContext.render(
@@ -230,6 +241,23 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             return (0.15 * intensity, 0.02 * intensity)
         case .mono:
             return (0.06 * intensity, -1 * intensity)
+        }
+    }
+}
+
+private extension UIView {
+    var previewOrientation: PreviewOrientation {
+        switch window?.windowScene?.interfaceOrientation {
+        case .portrait:
+            return .portrait
+        case .portraitUpsideDown:
+            return .portraitUpsideDown
+        case .landscapeLeft:
+            return .landscapeLeft
+        case .landscapeRight:
+            return .landscapeRight
+        default:
+            return .portrait
         }
     }
 }

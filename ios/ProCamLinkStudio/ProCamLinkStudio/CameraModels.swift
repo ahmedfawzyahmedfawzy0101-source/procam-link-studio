@@ -10,6 +10,26 @@ enum PreviewFillMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum PreviewOrientation: Equatable {
+    case portrait
+    case portraitUpsideDown
+    case landscapeLeft
+    case landscapeRight
+
+    var exifOrientation: Int32 {
+        switch self {
+        case .portrait:
+            return 6
+        case .portraitUpsideDown:
+            return 8
+        case .landscapeLeft:
+            return 1
+        case .landscapeRight:
+            return 3
+        }
+    }
+}
+
 enum StudioPanel: String, CaseIterable, Identifiable {
     case camera = "Camera"
     case video = "Video"
