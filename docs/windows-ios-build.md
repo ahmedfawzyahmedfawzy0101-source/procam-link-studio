@@ -72,6 +72,19 @@ Runs only when manually triggered from GitHub Actions. It builds a Release devic
 25. Confirm OBS receives video and audio.
 26. Record test results: iPhone model, iOS version, cameras shown, preview status, rotation behavior, SRT endpoint, OBS video/audio status, reconnect behavior, and any crash or permission issue.
 
+## Windows Studio CI Artifact
+
+The Windows workflow builds `windows/ProCamLinkStudio` on `windows-2022`, resolves `libsrt` with vcpkg, and uploads `ProCamLinkStudio-Windows.zip`.
+
+The zip contains:
+
+- `ProCamLinkStudio.exe`
+- vcpkg-resolved runtime DLLs when dynamic dependencies are present
+- `vcpkg.json`
+- third-party license notices under `licenses/`
+
+The current Windows receiver can listen on SRT port 9000 from the app with `C`, disconnect with `D`, toggle direct MPEG-TS recording with `R`, and toggle audio state with `A`. Direct decoded-frame D3D presentation, AAC playback, Bonjour discovery, remote-control acknowledgements, and virtual camera output still require implementation and validation before final v1.0 release.
+
 ## Privacy Strings Preserved
 
 The app declares:

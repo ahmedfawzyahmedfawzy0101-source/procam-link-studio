@@ -80,8 +80,11 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | Processed stream path | NOT IMPLEMENTED | Requires rendered processed `CVPixelBuffer` handoff from the shared Core Image pipeline into the streaming encoder. |
 | MPEG-TS muxing foundation | IMPLEMENTED + SOFTWARE PROCESSING | PAT/PMT/PES/TS packetization is wired to live H.264/HEVC and ADTS AAC samples. |
 | OBS Direct mode | NOT IMPLEMENTED | Sender path is implemented, but real OBS validation is intentionally deferred until final release-gate device testing. |
-| Windows native app shell | IMPLEMENTED + SOFTWARE PROCESSING | Win32/CMake project builds a native desktop shell and initializes Media Foundation. |
-| Windows receiver | NOT IMPLEMENTED | State model exists, but actual SRT receive/demux/decode is dependency-gated and not implemented. |
+| Windows native app shell | IMPLEMENTED + SOFTWARE PROCESSING | Win32/CMake project builds a native desktop shell, initializes COM/Media Foundation, and exposes receiver telemetry. |
+| Windows receiver | IMPLEMENTED + SOFTWARE PROCESSING | Source now uses libsrt for caller/listener receive, reconnect, latency/passphrase/stream ID options, SRT stats, MPEG-TS demux, raw TS recording, and Media Foundation decoder activation. Requires Windows CI and real iPhone-to-Windows validation before release-ready claim. |
+| Windows MPEG-TS demux | IMPLEMENTED + SOFTWARE PROCESSING | Parses PAT, PMT, PES, PTS/DTS, continuity counters, H.264, HEVC, and AAC elementary stream routing. Requires live-stream validation. |
+| Windows video decode | IMPLEMENTED + SOFTWARE PROCESSING | Media Foundation H.264/HEVC MFT discovery and decode feed are implemented with hardware decoder preference. D3D presentation of decoded frames is still not validated. |
+| Windows recording | IMPLEMENTED + SOFTWARE PROCESSING | Writes received MPEG-TS packets directly to `recordings/ProCamLinkStudio-capture.ts` when recording is enabled, avoiding recompression. |
 | Windows remote controls | NOT IMPLEMENTED | ProCam Control Protocol v1 command model exists; network channel and phone confirmations are not implemented. |
 | Windows discovery | NOT IMPLEMENTED | Manual endpoint model exists; Bonjour/mDNS discovery is not implemented. |
 | Windows virtual camera | NOT IMPLEMENTED | Not started. |

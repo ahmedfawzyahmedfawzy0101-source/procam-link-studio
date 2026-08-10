@@ -295,6 +295,27 @@ Not claimed complete in this milestone:
 - Windows virtual camera output.
 - Final v1.0 IPA.
 
+## Windows Finalization Pass
+
+Implemented in this pass:
+
+- Windows CMake now requires a real libsrt dependency and the Windows CI resolves `libsrt` through vcpkg.
+- Native receiver session starts Winsock, libsrt, COM, and Media Foundation.
+- SRT receiver supports caller and listener modes in source, with latency, receive/connect timeout, passphrase, stream ID, reconnect loop, disconnect, and SRT statistics.
+- MPEG-TS demux parses PAT, PMT, PES, PTS/DTS, continuity counters, H.264, HEVC, and AAC stream routing.
+- Media Foundation H.264/HEVC decoder discovery and input feed are implemented with hardware decoder preference.
+- Windows recording writes received MPEG-TS packets without recompression to `recordings/ProCamLinkStudio-capture.ts`.
+- Windows artifact packaging includes app runtime DLLs from vcpkg plus SRT/OpenSSL license notices.
+
+Not claimed complete in this pass:
+
+- D3D presentation of decoded frames.
+- AAC decode/playback.
+- Bonjour/mDNS discovery.
+- ProCam Control Protocol network transport and iPhone acknowledgements.
+- Windows virtual camera.
+- Real iPhone-to-Windows validation.
+
 ## No Fake Controls Policy
 
 The UI should expose only controls with real backing behavior. Features that need later pipeline work are tracked here and should not appear as working controls until implemented.

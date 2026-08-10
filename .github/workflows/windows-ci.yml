@@ -15,8 +15,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure vcpkg
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_ROOT -and $env:VCPKG_INSTALLATION_ROOT) {
+            $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          }
+          if (-not $env:VCPKG_ROOT -and (Test-Path "C:\vcpkg\vcpkg.exe")) {
+            $env:VCPKG_ROOT = "C:\vcpkg"
+          }
+          if (-not $env:VCPKG_ROOT) {
+            $env:VCPKG_ROOT = Join-Path $env:RUNNER_TEMP "vcpkg"
+            git clone https://github.com/microsoft/vcpkg "$env:VCPKG_ROOT"
+            & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
+          }
+          & "$env:VCPKG_ROOT\vcpkg.exe" version
+          "VCPKG_ROOT=$env:VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Configure
-        run: cmake -S windows/ProCamLinkStudio -B build/windows -G "Visual Studio 17 2022" -A x64
+        run: cmake -S windows/ProCamLinkStudio -B build/windows -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 
       - name: Build
         run: cmake --build build/windows --config Release --parallel
@@ -26,6 +43,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
           Copy-Item build/windows/Release/ProCamLinkStudio.exe artifacts/windows/
+          Copy-Item build/windows/Release/*.dll artifacts/windows/ -ErrorAction SilentlyContinue
+          Copy-Item build/windows/vcpkg_installed/x64-windows/bin/*.dll artifacts/windows/ -ErrorAction SilentlyContinue
+          Copy-Item windows/ProCamLinkStudio/vcpkg.json artifacts/windows/
+          New-Item -ItemType Directory -Force -Path artifacts/windows/licenses | Out-Null
+          Copy-Item build/windows/vcpkg_installed/x64-windows/share/libsrt/copyright artifacts/windows/licenses/LICENSE-libsrt.txt -ErrorAction SilentlyContinue
+          Copy-Item build/windows/vcpkg_installed/x64-windows/share/openssl/copyright artifacts/windows/licenses/LICENSE-openssl.txt -ErrorAction SilentlyContinue
+          "ProCam Link Studio Windows 1.0.0`nIncludes runtime DLLs resolved by CMake/vcpkg during CI. Third-party license notices are in licenses/." | Set-Content artifacts/windows/README.txt
           Compress-Archive -Path artifacts/windows/* -DestinationPath artifacts/ProCamLinkStudio-Windows.zip -Force
 
       - name: Upload Windows artifact

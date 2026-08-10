@@ -12,8 +12,6 @@ std::wstring ConnectionText(ConnectionState state) {
     switch (state) {
     case ConnectionState::Disconnected:
         return L"Disconnected";
-    case ConnectionState::WaitingForSrtDependency:
-        return L"SRT dependency required";
     case ConnectionState::Connecting:
         return L"Connecting";
     case ConnectionState::Connected:
@@ -104,12 +102,25 @@ LRESULT App::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         } else if (wparam == 'R') {
             receiver_.ToggleRecording();
             InvalidateRect(hwnd, nullptr, FALSE);
+        } else if (wparam == 'C') {
+            receiver_.StartListener(9000);
+            InvalidateRect(hwnd, nullptr, FALSE);
+        } else if (wparam == 'D') {
+            receiver_.Disconnect();
+            InvalidateRect(hwnd, nullptr, FALSE);
         }
+        return 0;
+    case WM_CREATE:
+        SetTimer(hwnd, 1, 250, nullptr);
+        return 0;
+    case WM_TIMER:
+        InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     case WM_PAINT:
         Paint(hwnd);
         return 0;
     case WM_DESTROY:
+        KillTimer(hwnd, 1);
         receiver_.Shutdown();
         PostQuitMessage(0);
         return 0;
@@ -140,14 +151,15 @@ void App::DrawHeader(HDC hdc, const RECT& rect) {
     RECT header{rect.left, rect.top, rect.right, rect.top + 56};
     FillRectColor(hdc, header, RGB(25, 29, 36));
 
-    const auto& state = receiver_.State();
+    const auto state = receiver_.StateSnapshot();
     RECT title{header.left + 18, header.top, header.left + 320, header.bottom};
     DrawTextLine(hdc, L"ProCam Link Studio", title);
 
     RECT status{header.left + 340, header.top, header.right - 18, header.bottom};
     const std::wstring line = L"Connection: " + ConnectionText(state.connection) +
         L"   Endpoint: " + state.endpoint +
-        L"   Codec: H.264/HEVC   Container: MPEG-TS planned";
+        L"   Codec: " + state.statistics.videoCodec +
+        L"   Container: MPEG-TS";
     DrawTextLine(hdc, line, status);
 }
 
@@ -160,15 +172,28 @@ void App::DrawPanels(HDC hdc, const RECT& rect) {
     RECT leftText{left.left + 16, left.top + 14, left.right - 12, left.bottom};
     DrawTextW(hdc, L"Camera\nExposure\nFocus\nWhite Balance\nImage\nTracking\nStabilization", -1, &leftText, DT_LEFT | DT_TOP);
 
+    const auto state = receiver_.StateSnapshot();
+    std::wstring rightStatus =
+        L"Receiver\n"
+        L"Status: " + state.status + L"\n" +
+        L"Remote: " + state.remoteAddress + L"\n" +
+        L"SRT Mbps: " + std::to_wstring(state.statistics.receiveBitrateMbps).substr(0, 4) + L"\n" +
+        L"SRT RTT ms: " + std::to_wstring(state.statistics.srtRttMs).substr(0, 5) + L"\n" +
+        L"TS packets: " + std::to_wstring(state.statistics.transportPackets) + L"\n" +
+        L"Continuity errors: " + std::to_wstring(state.statistics.continuityErrors) + L"\n" +
+        L"Video AU: " + std::to_wstring(state.statistics.videoAccessUnits) + L"\n" +
+        L"Audio AU: " + std::to_wstring(state.statistics.audioAccessUnits) + L"\n" +
+        L"Recorded bytes: " + std::to_wstring(state.statistics.recordedBytes);
     RECT rightText{right.left + 16, right.top + 14, right.right - 12, right.bottom};
-    DrawTextW(hdc, L"Receiver\nSRT stats\nDecoder stats\nAudio\nRecording\nControl confirmations", -1, &rightText, DT_LEFT | DT_TOP);
+    DrawTextW(hdc, rightStatus.c_str(), -1, &rightText, DT_LEFT | DT_TOP);
 }
 
 void App::DrawPreview(HDC hdc, const RECT& rect) {
     RECT preview{rect.left + 245, rect.top + 56, rect.right - 285, rect.bottom - 64};
     FillRectColor(hdc, preview, RGB(7, 9, 12));
     SetTextColor(hdc, RGB(146, 156, 168));
-    DrawTextLine(hdc, L"Live preview surface - Media Foundation/D3D decoder integration pending real SRT demux", preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    const auto state = receiver_.StateSnapshot();
+    DrawTextLine(hdc, state.streamActive ? L"Receiving live stream" : L"Press C to listen for iPhone SRT on port 9000", preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SetTextColor(hdc, RGB(236, 240, 244));
 }
 
@@ -176,12 +201,12 @@ void App::DrawFooter(HDC hdc, const RECT& rect) {
     RECT footer{rect.left, rect.bottom - 64, rect.right, rect.bottom};
     FillRectColor(hdc, footer, RGB(25, 29, 36));
 
-    const auto& state = receiver_.State();
+    const auto state = receiver_.StateSnapshot();
     RECT text{footer.left + 18, footer.top, footer.right - 18, footer.bottom};
     const std::wstring line =
         std::wstring(L"Record: ") + (state.recordingEnabled ? L"On" : L"Off") +
         L"   Audio: " + (state.audioPlaybackEnabled ? L"On" : L"Off") +
-        L"   Shortcuts: R record, A audio";
+        L"   Shortcuts: C connect listener, D disconnect, R record, A audio";
     DrawTextLine(hdc, line, text);
 }
 

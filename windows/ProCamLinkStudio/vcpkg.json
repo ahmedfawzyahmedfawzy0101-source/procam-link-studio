@@ -1,0 +1,7 @@
+{
+  "name": "procam-link-studio-windows",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "libsrt"
+  ]
+}
