@@ -25,6 +25,7 @@ private:
     ReceiverSession receiver_;
     int discoveryTimerTicks_ = 0;
     bool showConnectDialog_ = false;
+    int selectedInspectorTab_ = 0;
 };
 
 } // namespace procam
