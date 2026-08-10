@@ -2,6 +2,44 @@ import AVFoundation
 import SwiftUI
 
 struct ContentView: View {
+    @State private var launchCamera = false
+
+    var body: some View {
+        if launchCamera {
+            CameraStudioView()
+        } else {
+            SafeLaunchView {
+                launchCamera = true
+            }
+        }
+    }
+}
+
+private struct SafeLaunchView: View {
+    let openCamera: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                Text("ProCam Link Studio")
+                    .font(.title2.weight(.semibold))
+                Text("Test build safe launch")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.65))
+                Button("Open Camera") {
+                    openCamera()
+                }
+                .buttonStyle(RecordButtonStyle(isRecording: false))
+            }
+            .foregroundStyle(.white)
+            .padding()
+        }
+    }
+}
+
+private struct CameraStudioView: View {
     @StateObject private var cameraSession = CameraSessionManager()
     @StateObject private var deviceManager = CameraDeviceManager()
 
@@ -17,8 +55,9 @@ struct ContentView: View {
             case .authorized:
                 GeometryReader { geometry in
                     ZStack {
-                        ProcessedCameraPreviewView(
-                            cameraSession: cameraSession,
+                        CameraPreviewView(
+                            session: cameraSession.session,
+                            fillMode: cameraSession.previewFillMode,
                             tapHandler: { point in
                                 cameraSession.focusAndExpose(at: point)
                                 cameraSession.selectTrackedSubject(at: point)
