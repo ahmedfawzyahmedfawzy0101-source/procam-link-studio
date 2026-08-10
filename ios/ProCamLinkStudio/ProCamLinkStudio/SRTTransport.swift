@@ -10,6 +10,7 @@ final class SRTTransport {
     private var isSending = false
     private var droppedQueuePackets = 0
     private var handle: OpaquePointer?
+    private var isSRTStarted = false
     private(set) var state: SRTConnectionState = .disconnected {
         didSet { onStateChanged?(state) }
     }
@@ -19,15 +20,13 @@ final class SRTTransport {
 
     private var configuration = SRTConnectionConfiguration()
 
-    init() {
-        if ProCamSRTStartup() != 0 {
-            state = .failed("libsrt startup failed")
-        }
-    }
+    init() {}
 
     deinit {
         disconnect()
-        ProCamSRTCleanup()
+        if isSRTStarted {
+            ProCamSRTCleanup()
+        }
     }
 
     func configure(_ configuration: SRTConnectionConfiguration) {
@@ -68,6 +67,7 @@ final class SRTTransport {
     }
 
     private func connectLocked(attempt: Int) {
+        guard ensureSRTStartedLocked() else { return }
         updateState(attempt == 0 ? .connecting : .reconnecting(attempt))
         var error = [CChar](repeating: 0, count: 512)
         let host = configuration.host
@@ -174,5 +174,17 @@ final class SRTTransport {
         DispatchQueue.main.async {
             self.statistics = next
         }
+    }
+
+    private func ensureSRTStartedLocked() -> Bool {
+        if isSRTStarted {
+            return true
+        }
+        guard ProCamSRTStartup() == 0 else {
+            updateState(.failed("libsrt startup failed"))
+            return false
+        }
+        isSRTStarted = true
+        return true
     }
 }
