@@ -1,17 +1,55 @@
 #include "App.h"
 
+#include <windowsx.h>
+
+#include <algorithm>
+#include <array>
+#include <sstream>
 #include <string>
+#include <vector>
 
 namespace procam {
 
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"ProCamLinkStudioWindow";
+constexpr int kHeaderHeight = 56;
+constexpr int kFooterHeight = 64;
+constexpr int kLeftWidth = 288;
+constexpr int kRightWidth = 344;
+constexpr int kGap = 12;
+
+enum CommandId {
+    CommandConnect = 1,
+    CommandRecord = 2,
+    CommandStream = 3,
+    CommandVirtualCamera = 4,
+    CommandDiscovery = 5,
+    CommandAudio = 6
+};
+
+struct Theme {
+    COLORREF window = RGB(12, 14, 18);
+    COLORREF header = RGB(19, 22, 28);
+    COLORREF surface = RGB(24, 28, 36);
+    COLORREF surfaceRaised = RGB(31, 36, 46);
+    COLORREF preview = RGB(9, 11, 15);
+    COLORREF stroke = RGB(53, 60, 74);
+    COLORREF text = RGB(239, 242, 247);
+    COLORREF muted = RGB(150, 160, 174);
+    COLORREF dim = RGB(104, 114, 130);
+    COLORREF accent = RGB(43, 145, 255);
+    COLORREF green = RGB(43, 190, 118);
+    COLORREF red = RGB(232, 68, 78);
+    COLORREF amber = RGB(238, 174, 64);
+};
+
+Theme gTheme;
 
 std::wstring ConnectionText(ConnectionState state) {
     switch (state) {
     case ConnectionState::Disconnected:
-        return L"Disconnected";
+        return L"Offline";
     case ConnectionState::Connecting:
         return L"Connecting";
     case ConnectionState::Connected:
@@ -19,9 +57,55 @@ std::wstring ConnectionText(ConnectionState state) {
     case ConnectionState::Reconnecting:
         return L"Reconnecting";
     case ConnectionState::Failed:
-        return L"Failed";
+        return L"Needs attention";
     }
     return L"Unknown";
+}
+
+COLORREF ConnectionColor(ConnectionState state) {
+    switch (state) {
+    case ConnectionState::Connected:
+        return gTheme.green;
+    case ConnectionState::Connecting:
+    case ConnectionState::Reconnecting:
+        return gTheme.amber;
+    case ConnectionState::Failed:
+        return gTheme.red;
+    default:
+        return gTheme.dim;
+    }
+}
+
+std::wstring FormatDouble(double value, int precision = 1) {
+    std::wstringstream stream;
+    stream.setf(std::ios::fixed);
+    stream.precision(precision);
+    stream << value;
+    return stream.str();
+}
+
+std::wstring FormatBytes(uint64_t bytes) {
+    const double mb = static_cast<double>(bytes) / (1024.0 * 1024.0);
+    return FormatDouble(mb, mb >= 10 ? 0 : 1) + L" MB";
+}
+
+HFONT CreateUiFont(int size, int weight = FW_NORMAL) {
+    return CreateFontW(
+        -size,
+        0,
+        0,
+        0,
+        weight,
+        FALSE,
+        FALSE,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_SWISS,
+        L"Segoe UI"
+    );
 }
 
 void FillRectColor(HDC hdc, const RECT& rect, COLORREF color) {
@@ -30,8 +114,80 @@ void FillRectColor(HDC hdc, const RECT& rect, COLORREF color) {
     DeleteObject(brush);
 }
 
-void DrawTextLine(HDC hdc, const std::wstring& text, RECT rect, UINT format = DT_LEFT | DT_VCENTER | DT_SINGLELINE) {
+void RoundedFill(HDC hdc, const RECT& rect, COLORREF fill, COLORREF stroke = CLR_INVALID, int radius = 12) {
+    HBRUSH brush = CreateSolidBrush(fill);
+    HPEN pen = CreatePen(PS_SOLID, 1, stroke == CLR_INVALID ? fill : stroke);
+    HGDIOBJ oldBrush = SelectObject(hdc, brush);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    RoundRect(hdc, rect.left, rect.top, rect.right, rect.bottom, radius, radius);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+void DrawTextBlock(HDC hdc, const std::wstring& text, RECT rect, COLORREF color, HFONT font, UINT format) {
+    HGDIOBJ oldFont = SelectObject(hdc, font);
+    SetTextColor(hdc, color);
+    SetBkMode(hdc, TRANSPARENT);
     DrawTextW(hdc, text.c_str(), static_cast<int>(text.size()), &rect, format);
+    SelectObject(hdc, oldFont);
+}
+
+void DrawLabel(HDC hdc, const std::wstring& text, RECT rect, HFONT font, COLORREF color = gTheme.muted) {
+    DrawTextBlock(hdc, text, rect, color, font, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+
+void DrawDot(HDC hdc, int x, int y, COLORREF color) {
+    HBRUSH brush = CreateSolidBrush(color);
+    HGDIOBJ oldBrush = SelectObject(hdc, brush);
+    HPEN pen = CreatePen(PS_SOLID, 1, color);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    Ellipse(hdc, x - 4, y - 4, x + 4, y + 4);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+void DrawPill(HDC hdc, const std::wstring& text, RECT rect, COLORREF fill, COLORREF stroke, COLORREF textColor, HFONT font) {
+    RoundedFill(hdc, rect, fill, stroke, 14);
+    DrawTextBlock(hdc, text, rect, textColor, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+
+void DrawButton(HDC hdc, const std::wstring& text, RECT rect, COLORREF fill, COLORREF textColor, HFONT font, bool enabled = true) {
+    RoundedFill(hdc, rect, enabled ? fill : RGB(35, 39, 47), enabled ? RGB(70, 82, 100) : RGB(45, 50, 58), 12);
+    DrawTextBlock(hdc, text, rect, enabled ? textColor : gTheme.dim, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+
+void DrawSectionTitle(HDC hdc, const std::wstring& title, RECT& cursor, HFONT font) {
+    RECT label{cursor.left, cursor.top, cursor.right, cursor.top + 24};
+    DrawTextBlock(hdc, title, label, gTheme.muted, font, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    cursor.top += 28;
+}
+
+void DrawMetric(HDC hdc, const std::wstring& title, const std::wstring& value, RECT rect, HFONT labelFont, HFONT valueFont) {
+    RoundedFill(hdc, rect, RGB(26, 30, 38), RGB(44, 52, 66), 10);
+    RECT label{rect.left + 10, rect.top + 7, rect.right - 10, rect.top + 25};
+    RECT body{rect.left + 10, rect.top + 24, rect.right - 10, rect.bottom - 6};
+    DrawTextBlock(hdc, title, label, gTheme.dim, labelFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    DrawTextBlock(hdc, value, body, gTheme.text, valueFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+
+void DrawSlider(HDC hdc, const std::wstring& label, const std::wstring& value, int percent, RECT rect, HFONT font, HFONT valueFont) {
+    RECT header{rect.left, rect.top, rect.right, rect.top + 22};
+    RECT labelRect{header.left, header.top, header.right - 72, header.bottom};
+    RECT valueRect{header.right - 70, header.top, header.right, header.bottom};
+    DrawTextBlock(hdc, label, labelRect, gTheme.text, font, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    DrawTextBlock(hdc, value, valueRect, gTheme.muted, valueFont, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    RECT track{rect.left, rect.top + 30, rect.right, rect.top + 36};
+    RoundedFill(hdc, track, RGB(48, 55, 68), RGB(48, 55, 68), 6);
+    RECT active{track.left, track.top, track.left + ((track.right - track.left) * std::clamp(percent, 0, 100)) / 100, track.bottom};
+    RoundedFill(hdc, active, gTheme.accent, gTheme.accent, 6);
+}
+
+bool PtInRectLocal(const RECT& rect, int x, int y) {
+    return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 }
 
 } // namespace
@@ -54,8 +210,8 @@ int App::Run(HINSTANCE instance, int showCommand) {
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
-        1280,
-        820,
+        1440,
+        900,
         nullptr,
         nullptr,
         instance,
@@ -95,23 +251,30 @@ LRESULT CALLBACK App::WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
 
 LRESULT App::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
-    case WM_KEYDOWN:
-        if (wparam == 'A') {
-            receiver_.ToggleAudioPlayback();
-            InvalidateRect(hwnd, nullptr, FALSE);
-        } else if (wparam == 'R') {
-            receiver_.ToggleRecording();
-            InvalidateRect(hwnd, nullptr, FALSE);
+    case WM_KEYDOWN: {
+        const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        if ((ctrl && wparam == 'R') || wparam == 'R') {
+            HandleCommand(CommandRecord);
+        } else if ((ctrl && wparam == 'S') || wparam == 'S') {
+            HandleCommand(CommandStream);
+        } else if (ctrl && shift && wparam == 'V') {
+            HandleCommand(CommandVirtualCamera);
         } else if (wparam == 'C') {
-            receiver_.StartListener(9000);
-            InvalidateRect(hwnd, nullptr, FALSE);
+            HandleCommand(CommandConnect);
         } else if (wparam == 'D') {
             receiver_.Disconnect();
-            InvalidateRect(hwnd, nullptr, FALSE);
-        } else if (wparam == 'S') {
-            receiver_.AdvertiseDiscovery();
-            InvalidateRect(hwnd, nullptr, FALSE);
+        } else if (wparam == 'A') {
+            HandleCommand(CommandAudio);
+        } else if (wparam == 'F') {
+            // Fullscreen preview is reserved for the next UI batch.
         }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+    case WM_LBUTTONUP:
+        HandleClick(hwnd, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+        InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     case WM_CREATE:
         receiver_.StartListener(9000);
@@ -125,6 +288,12 @@ LRESULT App::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         }
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
+    case WM_GETMINMAXINFO: {
+        auto* limits = reinterpret_cast<MINMAXINFO*>(lparam);
+        limits->ptMinTrackSize.x = 1120;
+        limits->ptMinTrackSize.y = 720;
+        return 0;
+    }
     case WM_PAINT:
         Paint(hwnd);
         return 0;
@@ -138,86 +307,365 @@ LRESULT App::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
     }
 }
 
+void App::HandleCommand(int commandId) {
+    switch (commandId) {
+    case CommandConnect:
+        showConnectDialog_ = !showConnectDialog_;
+        receiver_.AdvertiseDiscovery();
+        break;
+    case CommandStream:
+        receiver_.StartListener(9000);
+        receiver_.AdvertiseDiscovery();
+        break;
+    case CommandRecord:
+        receiver_.ToggleRecording();
+        break;
+    case CommandAudio:
+        receiver_.ToggleAudioPlayback();
+        break;
+    case CommandDiscovery:
+        receiver_.AdvertiseDiscovery();
+        break;
+    default:
+        break;
+    }
+}
+
+void App::HandleClick(HWND hwnd, int x, int y) {
+    RECT rect{};
+    GetClientRect(hwnd, &rect);
+    RECT header{rect.left, rect.top, rect.right, rect.top + kHeaderHeight};
+    const int top = header.top + 10;
+    if (PtInRectLocal(RECT{header.right - 406, top, header.right - 326, top + 36}, x, y)) {
+        HandleCommand(CommandRecord);
+        return;
+    }
+    if (PtInRectLocal(RECT{header.right - 316, top, header.right - 232, top + 36}, x, y)) {
+        HandleCommand(CommandStream);
+        return;
+    }
+
+    RECT left{rect.left + kGap, rect.top + kHeaderHeight + kGap, rect.left + kLeftWidth, rect.bottom - kFooterHeight - kGap};
+    RECT cursor{left.left + 16, left.top + 14, left.right - 16, left.bottom - 16};
+    cursor.top += 48 + 132;
+    RECT addDevice{cursor.left, cursor.top, cursor.left + 116, cursor.top + 34};
+    RECT manualIp{cursor.left + 124, cursor.top, cursor.right, cursor.top + 34};
+    if (PtInRectLocal(addDevice, x, y) || PtInRectLocal(manualIp, x, y)) {
+        HandleCommand(CommandConnect);
+        return;
+    }
+
+    const int center = (rect.left + rect.right) / 2;
+    RECT footer{rect.left, rect.bottom - kFooterHeight, rect.right, rect.bottom};
+    if (PtInRectLocal(RECT{center - 154, footer.top + 12, center - 46, footer.bottom - 12}, x, y)) {
+        HandleCommand(CommandRecord);
+        return;
+    }
+    if (PtInRectLocal(RECT{center - 34, footer.top + 12, center + 94, footer.bottom - 12}, x, y)) {
+        HandleCommand(CommandStream);
+        return;
+    }
+
+    if (showConnectDialog_) {
+        RECT dialog{rect.left + (rect.right - rect.left) / 2 - 230, rect.top + (rect.bottom - rect.top) / 2 - 170, rect.left + (rect.right - rect.left) / 2 + 230, rect.top + (rect.bottom - rect.top) / 2 + 170};
+        RECT connect{dialog.right - 142, dialog.bottom - 56, dialog.right - 24, dialog.bottom - 20};
+        RECT close{dialog.right - 34, dialog.top + 14, dialog.right - 14, dialog.top + 34};
+        if (PtInRectLocal(connect, x, y)) {
+            showConnectDialog_ = false;
+            HandleCommand(CommandStream);
+        } else if (!PtInRectLocal(dialog, x, y) || PtInRectLocal(close, x, y)) {
+            showConnectDialog_ = false;
+        }
+    }
+}
+
 void App::Paint(HWND hwnd) {
     PAINTSTRUCT ps{};
     HDC hdc = BeginPaint(hwnd, &ps);
     RECT client{};
     GetClientRect(hwnd, &client);
 
-    FillRectColor(hdc, client, RGB(16, 18, 22));
-    SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, RGB(236, 240, 244));
+    HDC buffer = CreateCompatibleDC(hdc);
+    HBITMAP bitmap = CreateCompatibleBitmap(hdc, client.right - client.left, client.bottom - client.top);
+    HGDIOBJ oldBitmap = SelectObject(buffer, bitmap);
 
-    DrawHeader(hdc, client);
-    DrawPanels(hdc, client);
-    DrawPreview(hdc, client);
-    DrawFooter(hdc, client);
+    FillRectColor(buffer, client, gTheme.window);
+    SetBkMode(buffer, TRANSPARENT);
 
+    DrawHeader(buffer, client);
+    DrawLeftSidebar(buffer, client);
+    DrawPreview(buffer, client);
+    DrawRightInspector(buffer, client);
+    DrawFooter(buffer, client);
+
+    if (showConnectDialog_) {
+        auto titleFont = CreateUiFont(20, FW_SEMIBOLD);
+        auto textFont = CreateUiFont(14, FW_NORMAL);
+        auto smallFont = CreateUiFont(12, FW_NORMAL);
+        const auto state = receiver_.StateSnapshot();
+        RECT overlay{client.left, client.top, client.right, client.bottom};
+        FillRectColor(buffer, overlay, RGB(8, 10, 14));
+        RECT dialog{client.left + (client.right - client.left) / 2 - 230, client.top + (client.bottom - client.top) / 2 - 170, client.left + (client.right - client.left) / 2 + 230, client.top + (client.bottom - client.top) / 2 + 170};
+        RoundedFill(buffer, dialog, RGB(26, 31, 41), RGB(71, 86, 108), 18);
+        DrawTextBlock(buffer, L"Connect Device", RECT{dialog.left + 24, dialog.top + 18, dialog.right - 60, dialog.top + 54}, gTheme.text, titleFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        DrawPill(buffer, L"x", RECT{dialog.right - 34, dialog.top + 14, dialog.right - 14, dialog.top + 34}, RGB(42, 48, 60), RGB(65, 76, 94), gTheme.muted, smallFont);
+        RECT discovered{dialog.left + 24, dialog.top + 76, dialog.right - 24, dialog.top + 154};
+        RoundedFill(buffer, discovered, RGB(32, 38, 50), RGB(52, 64, 82), 14);
+        DrawDot(buffer, discovered.left + 22, discovered.top + 26, ConnectionColor(state.connection));
+        DrawTextBlock(buffer, L"Discovered iPhone / SRT sender", RECT{discovered.left + 42, discovered.top + 12, discovered.right - 18, discovered.top + 38}, gTheme.text, textFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        DrawTextBlock(buffer, state.status, RECT{discovered.left + 42, discovered.top + 38, discovered.right - 18, discovered.bottom - 10}, gTheme.muted, smallFont, DT_LEFT | DT_VCENTER | DT_WORDBREAK | DT_END_ELLIPSIS);
+        RECT manual{dialog.left + 24, dialog.top + 170, dialog.right - 24, dialog.top + 230};
+        RoundedFill(buffer, manual, RGB(22, 27, 36), RGB(46, 55, 70), 12);
+        DrawTextBlock(buffer, L"Manual IP: listen on port 9000   Control: discovery UDP 47777", RECT{manual.left + 14, manual.top, manual.right - 14, manual.bottom}, gTheme.muted, smallFont, DT_LEFT | DT_VCENTER | DT_WORDBREAK);
+        DrawButton(buffer, L"Refresh", RECT{dialog.left + 24, dialog.bottom - 56, dialog.left + 124, dialog.bottom - 20}, RGB(42, 50, 64), gTheme.text, textFont);
+        DrawButton(buffer, L"Listen", RECT{dialog.right - 142, dialog.bottom - 56, dialog.right - 24, dialog.bottom - 20}, gTheme.accent, gTheme.text, textFont);
+        DeleteObject(titleFont);
+        DeleteObject(textFont);
+        DeleteObject(smallFont);
+    }
+
+    BitBlt(hdc, 0, 0, client.right - client.left, client.bottom - client.top, buffer, 0, 0, SRCCOPY);
+    SelectObject(buffer, oldBitmap);
+    DeleteObject(bitmap);
+    DeleteDC(buffer);
     EndPaint(hwnd, &ps);
 }
 
 void App::DrawHeader(HDC hdc, const RECT& rect) {
-    RECT header{rect.left, rect.top, rect.right, rect.top + 56};
-    FillRectColor(hdc, header, RGB(25, 29, 36));
-
+    auto titleFont = CreateUiFont(18, FW_SEMIBOLD);
+    auto textFont = CreateUiFont(13, FW_NORMAL);
+    auto smallFont = CreateUiFont(12, FW_NORMAL);
+    auto buttonFont = CreateUiFont(13, FW_SEMIBOLD);
     const auto state = receiver_.StateSnapshot();
-    RECT title{header.left + 18, header.top, header.left + 320, header.bottom};
-    DrawTextLine(hdc, L"ProCam Link Studio", title);
 
-    RECT status{header.left + 340, header.top, header.right - 18, header.bottom};
-    const std::wstring line = L"Connection: " + ConnectionText(state.connection) +
-        L"   Endpoint: " + state.endpoint +
-        L"   Codec: " + state.statistics.videoCodec +
-        L"   Container: MPEG-TS";
-    DrawTextLine(hdc, line, status);
+    RECT header{rect.left, rect.top, rect.right, rect.top + kHeaderHeight};
+    FillRectColor(hdc, header, gTheme.header);
+
+    RECT logoBox{header.left + 18, header.top + 12, header.left + 46, header.top + 40};
+    RoundedFill(hdc, logoBox, RGB(35, 116, 214), RGB(64, 151, 255), 8);
+    DrawTextBlock(hdc, L"P", logoBox, RGB(255, 255, 255), titleFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT title{header.left + 56, header.top + 8, header.left + 260, header.bottom - 8};
+    DrawTextBlock(hdc, L"ProCam Link Studio", title, gTheme.text, titleFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    RECT stateDot{header.left + 306, header.top, header.left + 322, header.bottom};
+    DrawDot(hdc, stateDot.left + 7, stateDot.top + 28, ConnectionColor(state.connection));
+
+    RECT center{header.left + 326, header.top + 7, header.right - 430, header.bottom - 7};
+    std::wstring resolution = state.statistics.width > 0 ? std::to_wstring(state.statistics.width) + L"x" + std::to_wstring(state.statistics.height) : L"No signal";
+    std::wstring centerLine = L"iPhone  " + ConnectionText(state.connection) +
+        L"   " + resolution +
+        L"   " + state.statistics.videoCodec +
+        L"   Clean   " +
+        FormatDouble(state.statistics.srtRttMs, 0) + L" ms RTT";
+    DrawTextBlock(hdc, centerLine, center, gTheme.muted, textFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+    const int top = header.top + 10;
+    DrawButton(hdc, state.recordingEnabled ? L"Stop" : L"Record", RECT{header.right - 406, top, header.right - 326, top + 36}, state.recordingEnabled ? gTheme.red : RGB(46, 53, 66), gTheme.text, buttonFont);
+    DrawButton(hdc, L"Stream", RECT{header.right - 316, top, header.right - 232, top + 36}, state.connection == ConnectionState::Connected ? gTheme.green : RGB(46, 53, 66), gTheme.text, buttonFont);
+    DrawButton(hdc, L"Virtual Camera", RECT{header.right - 222, top, header.right - 96, top + 36}, RGB(36, 42, 52), gTheme.dim, buttonFont, false);
+    DrawPill(hdc, L"Perf", RECT{header.right - 86, top + 4, header.right - 38, top + 32}, RGB(31, 36, 46), RGB(49, 58, 72), gTheme.muted, smallFont);
+    DrawPill(hdc, L"...", RECT{header.right - 32, top + 4, header.right - 10, top + 32}, RGB(31, 36, 46), RGB(49, 58, 72), gTheme.muted, smallFont);
+
+    DeleteObject(titleFont);
+    DeleteObject(textFont);
+    DeleteObject(smallFont);
+    DeleteObject(buttonFont);
 }
 
-void App::DrawPanels(HDC hdc, const RECT& rect) {
-    RECT left{rect.left, rect.top + 56, rect.left + 245, rect.bottom - 64};
-    RECT right{rect.right - 285, rect.top + 56, rect.right, rect.bottom - 64};
-    FillRectColor(hdc, left, RGB(22, 25, 31));
-    FillRectColor(hdc, right, RGB(22, 25, 31));
-
-    RECT leftText{left.left + 16, left.top + 14, left.right - 12, left.bottom};
-    DrawTextW(hdc, L"Camera\nExposure\nFocus\nWhite Balance\nImage\nTracking\nStabilization", -1, &leftText, DT_LEFT | DT_TOP);
-
+void App::DrawLeftSidebar(HDC hdc, const RECT& rect) {
+    auto titleFont = CreateUiFont(15, FW_SEMIBOLD);
+    auto textFont = CreateUiFont(13, FW_NORMAL);
+    auto smallFont = CreateUiFont(12, FW_NORMAL);
     const auto state = receiver_.StateSnapshot();
-    std::wstring rightStatus =
-        L"Receiver\n"
-        L"Status: " + state.status + L"\n" +
-        L"Remote: " + state.remoteAddress + L"\n" +
-        L"SRT Mbps: " + std::to_wstring(state.statistics.receiveBitrateMbps).substr(0, 4) + L"\n" +
-        L"SRT RTT ms: " + std::to_wstring(state.statistics.srtRttMs).substr(0, 5) + L"\n" +
-        L"TS packets: " + std::to_wstring(state.statistics.transportPackets) + L"\n" +
-        L"Continuity errors: " + std::to_wstring(state.statistics.continuityErrors) + L"\n" +
-        L"Video AU: " + std::to_wstring(state.statistics.videoAccessUnits) + L"\n" +
-        L"Audio AU: " + std::to_wstring(state.statistics.audioAccessUnits) + L"\n" +
-        L"Recorded bytes: " + std::to_wstring(state.statistics.recordedBytes);
-    RECT rightText{right.left + 16, right.top + 14, right.right - 12, right.bottom};
-    DrawTextW(hdc, rightStatus.c_str(), -1, &rightText, DT_LEFT | DT_TOP);
+
+    RECT sidebar{rect.left + kGap, rect.top + kHeaderHeight + kGap, rect.left + kLeftWidth, rect.bottom - kFooterHeight - kGap};
+    RoundedFill(hdc, sidebar, gTheme.surface, RGB(35, 42, 54), 14);
+
+    RECT cursor{sidebar.left + 16, sidebar.top + 14, sidebar.right - 16, sidebar.bottom - 16};
+    DrawTextBlock(hdc, L"Devices", RECT{cursor.left, cursor.top, cursor.left + 94, cursor.top + 32}, gTheme.text, titleFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    DrawPill(hdc, L"Sources", RECT{cursor.left + 102, cursor.top, cursor.left + 190, cursor.top + 32}, RGB(31, 36, 46), RGB(45, 52, 64), gTheme.muted, smallFont);
+    cursor.top += 48;
+
+    RECT device{cursor.left, cursor.top, cursor.right, cursor.top + 118};
+    RoundedFill(hdc, device, RGB(30, 36, 47), state.connection == ConnectionState::Connected ? gTheme.green : RGB(54, 64, 82), 16);
+    DrawDot(hdc, device.left + 18, device.top + 24, ConnectionColor(state.connection));
+    DrawTextBlock(hdc, L"iPhone Camera", RECT{device.left + 34, device.top + 12, device.right - 16, device.top + 36}, gTheme.text, titleFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawTextBlock(hdc, ConnectionText(state.connection), RECT{device.left + 34, device.top + 36, device.right - 16, device.top + 58}, gTheme.muted, smallFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawMetric(hdc, L"Battery", L"--", RECT{device.left + 12, device.top + 70, device.left + 78, device.bottom - 12}, smallFont, textFont);
+    DrawMetric(hdc, L"Network", state.connection == ConnectionState::Connected ? L"Good" : L"Waiting", RECT{device.left + 86, device.top + 70, device.left + 164, device.bottom - 12}, smallFont, textFont);
+    DrawMetric(hdc, L"Camera", L"Back", RECT{device.left + 172, device.top + 70, device.right - 12, device.bottom - 12}, smallFont, textFont);
+    cursor.top += 132;
+
+    DrawButton(hdc, L"+ Add Device", RECT{cursor.left, cursor.top, cursor.left + 116, cursor.top + 34}, RGB(39, 47, 60), gTheme.text, textFont);
+    DrawButton(hdc, L"Manual IP", RECT{cursor.left + 124, cursor.top, cursor.right, cursor.top + 34}, RGB(34, 40, 51), gTheme.text, textFont);
+    cursor.top += 52;
+
+    DrawSectionTitle(hdc, L"Lens", cursor, smallFont);
+    std::array<std::wstring, 5> lenses{L"0.5x", L"1x", L"2x", L"3x", L"5x"};
+    int left = cursor.left;
+    for (size_t i = 0; i < lenses.size(); ++i) {
+        RECT lens{left, cursor.top, left + 46, cursor.top + 34};
+        DrawPill(hdc, lenses[i], lens, i == 1 ? gTheme.accent : RGB(30, 36, 46), i == 1 ? RGB(92, 178, 255) : RGB(52, 61, 76), gTheme.text, textFont);
+        left += 50;
+    }
+    cursor.top += 54;
+
+    DrawSectionTitle(hdc, L"Camera Source", cursor, smallFont);
+    DrawMetric(hdc, L"Resolution", state.statistics.width > 0 ? std::to_wstring(state.statistics.width) + L"x" + std::to_wstring(state.statistics.height) : L"Auto", RECT{cursor.left, cursor.top, cursor.left + 118, cursor.top + 54}, smallFont, textFont);
+    DrawMetric(hdc, L"FPS", state.statistics.decodedFps > 0 ? FormatDouble(state.statistics.decodedFps, 0) : L"30", RECT{cursor.left + 126, cursor.top, cursor.right, cursor.top + 54}, smallFont, textFont);
+    cursor.top += 66;
+    DrawMetric(hdc, L"Codec", state.statistics.videoCodec, RECT{cursor.left, cursor.top, cursor.left + 118, cursor.top + 54}, smallFont, textFont);
+    DrawMetric(hdc, L"Stabilization", L"Cinematic", RECT{cursor.left + 126, cursor.top, cursor.right, cursor.top + 54}, smallFont, textFont);
+
+    DeleteObject(titleFont);
+    DeleteObject(textFont);
+    DeleteObject(smallFont);
 }
 
 void App::DrawPreview(HDC hdc, const RECT& rect) {
-    RECT preview{rect.left + 245, rect.top + 56, rect.right - 285, rect.bottom - 64};
-    FillRectColor(hdc, preview, RGB(7, 9, 12));
-    SetTextColor(hdc, RGB(146, 156, 168));
+    auto titleFont = CreateUiFont(22, FW_SEMIBOLD);
+    auto textFont = CreateUiFont(14, FW_NORMAL);
+    auto smallFont = CreateUiFont(12, FW_NORMAL);
     const auto state = receiver_.StateSnapshot();
-    RECT message{preview.left + 36, preview.top + 36, preview.right - 36, preview.bottom - 36};
-    DrawTextLine(hdc, state.streamActive ? L"Receiving live stream" : state.status, message, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
-    SetTextColor(hdc, RGB(236, 240, 244));
+
+    RECT canvas{rect.left + kLeftWidth + kGap, rect.top + kHeaderHeight + kGap, rect.right - kRightWidth - kGap, rect.bottom - kFooterHeight - kGap};
+    RoundedFill(hdc, canvas, RGB(17, 20, 26), RGB(35, 42, 54), 16);
+
+    RECT preview{canvas.left + 18, canvas.top + 18, canvas.right - 18, canvas.bottom - 72};
+    RoundedFill(hdc, preview, gTheme.preview, RGB(29, 36, 48), 14);
+
+    if (state.streamActive) {
+        RECT signal{preview.left + 24, preview.top + 24, preview.right - 24, preview.bottom - 24};
+        RoundedFill(hdc, signal, RGB(11, 14, 20), RGB(43, 145, 255), 12);
+        DrawTextBlock(hdc, L"Receiving live stream", signal, gTheme.text, titleFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    } else {
+        RECT icon{preview.left + (preview.right - preview.left) / 2 - 32, preview.top + (preview.bottom - preview.top) / 2 - 86, preview.left + (preview.right - preview.left) / 2 + 32, preview.top + (preview.bottom - preview.top) / 2 - 22};
+        RoundedFill(hdc, icon, RGB(29, 35, 46), RGB(57, 68, 86), 16);
+        DrawTextBlock(hdc, L"iPhone", RECT{preview.left, icon.bottom + 12, preview.right, icon.bottom + 44}, gTheme.text, titleFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        DrawTextBlock(hdc, state.connection == ConnectionState::Connected ? L"Waiting for iPhone video..." : L"No Camera Connected", RECT{preview.left, icon.bottom + 48, preview.right, icon.bottom + 76}, gTheme.muted, textFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        DrawTextBlock(hdc, state.status, RECT{preview.left + 40, icon.bottom + 78, preview.right - 40, icon.bottom + 112}, gTheme.dim, smallFont, DT_CENTER | DT_VCENTER | DT_WORDBREAK | DT_END_ELLIPSIS);
+    }
+
+    RECT toolbar{preview.left + 22, preview.bottom - 48, preview.right - 22, preview.bottom - 14};
+    std::array<std::wstring, 8> tools{L"Fit", L"Fill", L"100%", L"Rotate", L"Mirror", L"Guides", L"Scopes", L"Fullscreen"};
+    int x = toolbar.left;
+    for (const auto& tool : tools) {
+        RECT pill{x, toolbar.top, x + 82, toolbar.bottom};
+        DrawPill(hdc, tool, pill, RGB(28, 33, 43), RGB(53, 62, 78), tool == L"Fill" ? gTheme.text : gTheme.muted, smallFont);
+        x += 88;
+        if (x + 82 > toolbar.right) {
+            break;
+        }
+    }
+
+    DeleteObject(titleFont);
+    DeleteObject(textFont);
+    DeleteObject(smallFont);
+}
+
+void App::DrawRightInspector(HDC hdc, const RECT& rect) {
+    auto titleFont = CreateUiFont(15, FW_SEMIBOLD);
+    auto textFont = CreateUiFont(13, FW_NORMAL);
+    auto smallFont = CreateUiFont(12, FW_NORMAL);
+    const auto state = receiver_.StateSnapshot();
+
+    RECT inspector{rect.right - kRightWidth, rect.top + kHeaderHeight + kGap, rect.right - kGap, rect.bottom - kFooterHeight - kGap};
+    RoundedFill(hdc, inspector, gTheme.surface, RGB(35, 42, 54), 14);
+
+    RECT cursor{inspector.left + 16, inspector.top + 14, inspector.right - 16, inspector.bottom - 16};
+    std::array<std::wstring, 5> tabs{L"CAMERA", L"IMAGE", L"SMART", L"MONITOR", L"PRESETS"};
+    int tabX = cursor.left;
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        RECT tab{tabX, cursor.top, tabX + 58, cursor.top + 28};
+        DrawPill(hdc, tabs[i], tab, i == 0 ? RGB(36, 78, 126) : RGB(30, 36, 46), i == 0 ? RGB(70, 145, 215) : RGB(49, 58, 72), i == 0 ? gTheme.text : gTheme.muted, smallFont);
+        tabX += 62;
+    }
+    cursor.top += 46;
+
+    DrawSectionTitle(hdc, L"Exposure", cursor, smallFont);
+    RECT card{cursor.left, cursor.top, cursor.right, cursor.top + 150};
+    RoundedFill(hdc, card, gTheme.surfaceRaised, RGB(46, 55, 70), 14);
+    RECT inner{card.left + 14, card.top + 12, card.right - 14, card.bottom - 12};
+    DrawPill(hdc, L"Auto", RECT{inner.left, inner.top, inner.left + 62, inner.top + 28}, gTheme.accent, RGB(90, 175, 255), gTheme.text, smallFont);
+    DrawPill(hdc, L"Manual", RECT{inner.left + 68, inner.top, inner.left + 144, inner.top + 28}, RGB(35, 41, 52), RGB(55, 64, 79), gTheme.muted, smallFont);
+    DrawPill(hdc, L"Lock", RECT{inner.left + 150, inner.top, inner.left + 210, inner.top + 28}, RGB(35, 41, 52), RGB(55, 64, 79), gTheme.muted, smallFont);
+    DrawSlider(hdc, L"EV", L"0.0", 50, RECT{inner.left, inner.top + 44, inner.right, inner.top + 84}, smallFont, textFont);
+    DrawSlider(hdc, L"ISO", L"Auto", 30, RECT{inner.left, inner.top + 92, inner.right, inner.top + 132}, smallFont, textFont);
+    cursor.top += 164;
+
+    DrawSectionTitle(hdc, L"Focus", cursor, smallFont);
+    RECT focus{cursor.left, cursor.top, cursor.right, cursor.top + 116};
+    RoundedFill(hdc, focus, gTheme.surfaceRaised, RGB(46, 55, 70), 14);
+    RECT focusInner{focus.left + 14, focus.top + 12, focus.right - 14, focus.bottom - 12};
+    DrawPill(hdc, L"Continuous", RECT{focusInner.left, focusInner.top, focusInner.left + 98, focusInner.top + 28}, gTheme.accent, RGB(90, 175, 255), gTheme.text, smallFont);
+    DrawPill(hdc, L"Manual", RECT{focusInner.left + 106, focusInner.top, focusInner.left + 180, focusInner.top + 28}, RGB(35, 41, 52), RGB(55, 64, 79), gTheme.muted, smallFont);
+    DrawSlider(hdc, L"Lens", L"Auto", 45, RECT{focusInner.left, focusInner.top + 46, focusInner.right, focusInner.top + 86}, smallFont, textFont);
+    cursor.top += 130;
+
+    DrawSectionTitle(hdc, L"White Balance", cursor, smallFont);
+    RECT wb{cursor.left, cursor.top, cursor.right, cursor.top + 116};
+    RoundedFill(hdc, wb, gTheme.surfaceRaised, RGB(46, 55, 70), 14);
+    RECT wbInner{wb.left + 14, wb.top + 12, wb.right - 14, wb.bottom - 12};
+    DrawSlider(hdc, L"Temperature", L"Auto", 52, RECT{wbInner.left, wbInner.top, wbInner.right, wbInner.top + 40}, smallFont, textFont);
+    DrawSlider(hdc, L"Tint", L"0", 50, RECT{wbInner.left, wbInner.top + 48, wbInner.right, wbInner.top + 88}, smallFont, textFont);
+    cursor.top += 130;
+
+    DrawSectionTitle(hdc, L"Presets", cursor, smallFont);
+    std::array<std::wstring, 4> presets{L"4K Cinema", L"Creator Portrait", L"OBS Live", L"Low Light"};
+    for (const auto& preset : presets) {
+        RECT presetCard{cursor.left, cursor.top, cursor.right, cursor.top + 42};
+        RoundedFill(hdc, presetCard, RGB(29, 35, 45), RGB(46, 55, 70), 10);
+        DrawTextBlock(hdc, preset, RECT{presetCard.left + 12, presetCard.top, presetCard.right - 70, presetCard.bottom}, gTheme.text, textFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        DrawPill(hdc, L"Apply", RECT{presetCard.right - 62, presetCard.top + 7, presetCard.right - 10, presetCard.bottom - 7}, RGB(36, 78, 126), RGB(70, 145, 215), gTheme.text, smallFont);
+        cursor.top += 48;
+    }
+
+    RECT diag{cursor.left, std::min(cursor.top + 8, cursor.bottom - 74), cursor.right, cursor.bottom};
+    RoundedFill(hdc, diag, RGB(22, 27, 35), RGB(42, 50, 64), 12);
+    std::wstring diagText = L"Diagnostics   RX " + FormatDouble(state.statistics.receiveBitrateMbps, 2) +
+        L" Mbps   TS " + std::to_wstring(state.statistics.transportPackets) +
+        L"   Drop " + std::to_wstring(state.statistics.droppedFrames);
+    DrawTextBlock(hdc, diagText, RECT{diag.left + 12, diag.top + 8, diag.right - 12, diag.bottom - 8}, gTheme.muted, smallFont, DT_LEFT | DT_VCENTER | DT_WORDBREAK | DT_END_ELLIPSIS);
+
+    DeleteObject(titleFont);
+    DeleteObject(textFont);
+    DeleteObject(smallFont);
 }
 
 void App::DrawFooter(HDC hdc, const RECT& rect) {
-    RECT footer{rect.left, rect.bottom - 64, rect.right, rect.bottom};
-    FillRectColor(hdc, footer, RGB(25, 29, 36));
-
+    auto textFont = CreateUiFont(13, FW_NORMAL);
+    auto valueFont = CreateUiFont(14, FW_SEMIBOLD);
     const auto state = receiver_.StateSnapshot();
-    RECT text{footer.left + 18, footer.top, footer.right - 18, footer.bottom};
-    const std::wstring line =
-        std::wstring(L"Record: ") + (state.recordingEnabled ? L"On" : L"Off") +
-        L"   Audio: " + (state.audioPlaybackEnabled ? L"On" : L"Off") +
-        L"   Shortcuts: S search/advertise, C listen, D disconnect, R record, A audio";
-    DrawTextLine(hdc, line, text);
+
+    RECT footer{rect.left, rect.bottom - kFooterHeight, rect.right, rect.bottom};
+    FillRectColor(hdc, footer, gTheme.header);
+
+    RECT meter{footer.left + 18, footer.top + 14, footer.left + 150, footer.bottom - 14};
+    RoundedFill(hdc, meter, RGB(28, 33, 43), RGB(48, 56, 70), 12);
+    DrawTextBlock(hdc, state.audioPlaybackEnabled ? L"Mic On" : L"Mic Muted", RECT{meter.left + 12, meter.top, meter.right - 12, meter.bottom}, gTheme.text, textFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawDot(hdc, meter.right - 18, meter.top + 18, state.audioPlaybackEnabled ? gTheme.green : gTheme.dim);
+
+    const int center = (footer.left + footer.right) / 2;
+    DrawButton(hdc, state.recordingEnabled ? L"Recording" : L"Record", RECT{center - 154, footer.top + 12, center - 46, footer.bottom - 12}, state.recordingEnabled ? gTheme.red : RGB(43, 51, 64), gTheme.text, valueFont);
+    DrawButton(hdc, ConnectionText(state.connection), RECT{center - 34, footer.top + 12, center + 94, footer.bottom - 12}, state.connection == ConnectionState::Connected ? gTheme.green : RGB(43, 51, 64), gTheme.text, valueFont);
+    DrawButton(hdc, L"Virtual Camera", RECT{center + 106, footer.top + 12, center + 244, footer.bottom - 12}, RGB(31, 36, 46), gTheme.dim, textFont, false);
+
+    int chipRight = footer.right - 18;
+    std::vector<std::pair<std::wstring, std::wstring>> chips{
+        {L"RX", FormatDouble(state.statistics.receiveBitrateMbps, 2) + L" Mbps"},
+        {L"RTT", FormatDouble(state.statistics.srtRttMs, 0) + L" ms"},
+        {L"Frames", std::to_wstring(state.statistics.videoAccessUnits)},
+        {L"Saved", FormatBytes(state.statistics.recordedBytes)}
+    };
+    for (auto it = chips.rbegin(); it != chips.rend(); ++it) {
+        RECT chip{chipRight - 112, footer.top + 12, chipRight, footer.bottom - 12};
+        DrawMetric(hdc, it->first, it->second, chip, textFont, valueFont);
+        chipRight -= 120;
+    }
+
+    DeleteObject(textFont);
+    DeleteObject(valueFont);
 }
 
 } // namespace procam
