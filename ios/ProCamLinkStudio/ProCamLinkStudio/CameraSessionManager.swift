@@ -24,6 +24,8 @@ final class CameraSessionManager: ObservableObject {
     @Published var selectedRecordingCodec: RecordingCodec = .hevc
     @Published private(set) var availableRecordingCodecs: [RecordingCodec] = [.h264]
     @Published private(set) var recordingState = RecordingState()
+    @Published private(set) var profiles: [CameraProfile] = CameraProfile.builtIns
+    @Published private(set) var activeProfileName: String = "Natural"
     @Published private(set) var thermalState = ThermalStateLabel(title: "Nominal", isRisky: false)
 
     private let sessionQueue = DispatchQueue(label: "studio.procamlink.camera.session")
@@ -40,6 +42,7 @@ final class CameraSessionManager: ObservableObject {
 
     init() {
         authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        loadCustomProfiles()
         updateThermalState()
         thermalObserver = NotificationCenter.default.addObserver(
             forName: ProcessInfo.thermalStateDidChangeNotification,
@@ -154,6 +157,32 @@ final class CameraSessionManager: ObservableObject {
 
     func resetImageAdjustments() {
         imageAdjustments = .neutral
+    }
+
+    func applyProfile(_ profile: CameraProfile) {
+        activeProfileName = profile.name
+        imageAdjustments = profile.imageAdjustments
+        applyFormatGoal(profile.formatGoal)
+    }
+
+    func saveCustomProfile() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        let profile = CameraProfile(
+            id: UUID(),
+            name: "Custom \(formatter.string(from: Date()))",
+            formatGoal: .current,
+            imageAdjustments: imageAdjustments,
+            isBuiltIn: false
+        )
+        profiles.append(profile)
+        persistCustomProfiles()
+    }
+
+    func deleteCustomProfile(_ profile: CameraProfile) {
+        guard !profile.isBuiltIn else { return }
+        profiles.removeAll { $0.id == profile.id }
+        persistCustomProfiles()
     }
 
     func setRecordingCodec(_ codec: RecordingCodec) {
@@ -522,6 +551,33 @@ final class CameraSessionManager: ObservableObject {
         _ = refreshStorageWarning()
     }
 
+    private func applyFormatGoal(_ goal: CameraProfile.FormatGoal) {
+        guard !formats.isEmpty else { return }
+
+        let match: CameraFormatOption?
+        switch goal {
+        case .maxQuality:
+            match = formats.max { $0.sortScore < $1.sortScore }
+        case .fourK30:
+            match = formats.first { max($0.width, $0.height) >= 3840 && $0.maxFPS >= 30 }
+        case .fourK60:
+            match = formats.first { max($0.width, $0.height) >= 3840 && $0.maxFPS >= 60 }
+        case .fullHD60:
+            match = formats.first { max($0.width, $0.height) == 1920 && $0.maxFPS >= 60 }
+        case .lowLight:
+            match = formats
+                .filter { $0.maxFPS >= 24 && $0.maxFPS <= 30 }
+                .max { $0.sortScore < $1.sortScore }
+        case .current:
+            match = nil
+        }
+
+        if let match {
+            let fps = goal == .fourK60 || goal == .fullHD60 ? min(match.maxFPS, 60) : min(match.maxFPS, 30)
+            apply(format: match, fps: fps)
+        }
+    }
+
     private func updateThermalState() {
         switch ProcessInfo.processInfo.thermalState {
         case .nominal:
@@ -584,6 +640,23 @@ final class CameraSessionManager: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: Date())
+    }
+
+    private func loadCustomProfiles() {
+        guard let data = UserDefaults.standard.data(forKey: "customCameraProfiles") else {
+            profiles = CameraProfile.builtIns
+            return
+        }
+
+        let custom = (try? JSONDecoder().decode([CameraProfile].self, from: data)) ?? []
+        profiles = CameraProfile.builtIns + custom.filter { !$0.isBuiltIn }
+    }
+
+    private func persistCustomProfiles() {
+        let custom = profiles.filter { !$0.isBuiltIn }
+        if let data = try? JSONEncoder().encode(custom) {
+            UserDefaults.standard.set(data, forKey: "customCameraProfiles")
+        }
     }
 }
 

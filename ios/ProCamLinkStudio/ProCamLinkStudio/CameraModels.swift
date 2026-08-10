@@ -203,7 +203,7 @@ struct MonitoringState: Equatable {
     var showThermal = true
 }
 
-enum LookPreset: String, CaseIterable, Identifiable {
+enum LookPreset: String, CaseIterable, Identifiable, Codable {
     case natural = "Natural"
     case clean = "Clean"
     case soft = "Soft"
@@ -216,7 +216,7 @@ enum LookPreset: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct ImageAdjustmentState: Equatable {
+struct ImageAdjustmentState: Equatable, Codable {
     var exposure: Double = 0
     var contrast: Double = 1
     var highlights: Double = 0
@@ -247,6 +247,34 @@ struct RecordingState: Equatable {
     var elapsedSeconds: TimeInterval = 0
     var lastRecordingPath: String?
     var storageWarning: String?
+}
+
+struct CameraProfile: Identifiable, Equatable, Codable {
+    enum FormatGoal: String, Codable {
+        case maxQuality
+        case fourK30
+        case fourK60
+        case fullHD60
+        case lowLight
+        case current
+    }
+
+    let id: UUID
+    var name: String
+    var formatGoal: FormatGoal
+    var imageAdjustments: ImageAdjustmentState
+    var isBuiltIn: Bool
+
+    static var builtIns: [CameraProfile] {
+        [
+            CameraProfile(id: UUID(uuidString: "00000000-0000-0000-0000-000000000101")!, name: "Max Quality", formatGoal: .maxQuality, imageAdjustments: .neutral, isBuiltIn: true),
+            CameraProfile(id: UUID(uuidString: "00000000-0000-0000-0000-000000000102")!, name: "Creator Portrait", formatGoal: .fullHD60, imageAdjustments: ImageAdjustmentState(contrast: 1.03, saturation: 1.02, sharpness: 0.15, denoise: 0.1, look: .clean, lookIntensity: 0.45), isBuiltIn: true),
+            CameraProfile(id: UUID(uuidString: "00000000-0000-0000-0000-000000000103")!, name: "4K Cinema", formatGoal: .fourK30, imageAdjustments: ImageAdjustmentState(contrast: 1.08, highlights: 0.25, shadows: 0.15, saturation: 0.96, gamma: 1.02, vignette: 0.25, look: .cinematic, lookIntensity: 0.6), isBuiltIn: true),
+            CameraProfile(id: UUID(uuidString: "00000000-0000-0000-0000-000000000104")!, name: "1080p60", formatGoal: .fullHD60, imageAdjustments: .neutral, isBuiltIn: true),
+            CameraProfile(id: UUID(uuidString: "00000000-0000-0000-0000-000000000105")!, name: "Low Light", formatGoal: .lowLight, imageAdjustments: ImageAdjustmentState(exposure: 0.2, contrast: 0.94, shadows: 0.35, saturation: 0.96, denoise: 0.35, gamma: 1.06, look: .soft, lookIntensity: 0.4), isBuiltIn: true),
+            CameraProfile(id: UUID(uuidString: "00000000-0000-0000-0000-000000000106")!, name: "Natural", formatGoal: .current, imageAdjustments: .neutral, isBuiltIn: true)
+        ]
+    }
 }
 
 func shutterLabel(seconds: Double) -> String {

@@ -84,6 +84,23 @@ Implemented in this milestone:
 - Storage warning when available important-use capacity is below 1 GB.
 - Last recording filename display after capture completes.
 
+## Milestone 4 Scope
+
+Implemented in this milestone:
+
+- Built-in profiles:
+  - Max Quality
+  - Creator Portrait
+  - 4K Cinema
+  - 1080p60
+  - Low Light
+  - Natural
+- Profile application chooses matching real formats only when available.
+- Profile application updates actual image-processing settings.
+- Custom profile save using current image settings.
+- Custom profile persistence with `UserDefaults`.
+- Last custom profile delete.
+
 Not claimed complete in this milestone:
 
 - Histogram/RGB histogram/waveform/zebras/focus peaking rendering.

@@ -518,9 +518,38 @@ private struct AppControlPanel: View {
     @ObservedObject var cameraSession: CameraSessionManager
 
     var body: some View {
-        HStack {
-            Badge(title: "Thermal", value: cameraSession.thermalState.title)
-            Badge(title: "Preview", value: cameraSession.previewFillMode.rawValue)
+        VStack(spacing: 10) {
+            HStack {
+                Badge(title: "Thermal", value: cameraSession.thermalState.title)
+                Badge(title: "Preview", value: cameraSession.previewFillMode.rawValue)
+                Badge(title: "Profile", value: cameraSession.activeProfileName)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(cameraSession.profiles) { profile in
+                        Button(profile.name) {
+                            cameraSession.applyProfile(profile)
+                        }
+                        .buttonStyle(SegmentButtonStyle(isActive: cameraSession.activeProfileName == profile.name))
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button("Save Custom") {
+                    cameraSession.saveCustomProfile()
+                }
+                .buttonStyle(CompactButtonStyle())
+
+                if let custom = cameraSession.profiles.last(where: { !$0.isBuiltIn }) {
+                    Button("Delete Last") {
+                        cameraSession.deleteCustomProfile(custom)
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                }
+            }
+
             if let error = cameraSession.lastError {
                 Text(error)
                     .font(.caption2)
