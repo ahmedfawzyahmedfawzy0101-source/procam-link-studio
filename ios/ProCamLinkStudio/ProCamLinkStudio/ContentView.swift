@@ -514,6 +514,11 @@ private struct SmartControlPanel: View {
 
     var body: some View {
         VStack(spacing: 10) {
+            PickerRow(title: "Track", selection: Binding(
+                get: { cameraSession.trackingState.mode },
+                set: { cameraSession.setTrackingMode($0) }
+            ))
+
             PickerRow(title: "Frame", selection: Binding(
                 get: { cameraSession.smartFraming.mode },
                 set: {
@@ -529,11 +534,49 @@ private struct SmartControlPanel: View {
             SliderRow(title: "Max Z", value: smartBinding(\.maxDigitalZoom), range: 1...3, display: String(format: "%.1fx", cameraSession.smartFraming.maxDigitalZoom))
             SliderRow(title: "Min Z", value: smartBinding(\.minDigitalZoom), range: 1...2, display: String(format: "%.1fx", cameraSession.smartFraming.minDigitalZoom))
             SliderRow(title: "Head", value: smartBinding(\.headroom), range: -0.2...0.3, display: String(format: "%+.2f", cameraSession.smartFraming.headroom))
+            SliderRow(title: "Look", value: smartBinding(\.lookRoom), range: -0.25...0.25, display: String(format: "%+.2f", cameraSession.smartFraming.lookRoom))
+            SliderRow(title: "H Bias", value: smartBinding(\.horizontalBias), range: -0.35...0.35, display: String(format: "%+.2f", cameraSession.smartFraming.horizontalBias))
+            SliderRow(title: "V Bias", value: smartBinding(\.verticalBias), range: -0.35...0.35, display: String(format: "%+.2f", cameraSession.smartFraming.verticalBias))
             SliderRow(title: "Tight", value: smartBinding(\.tightness), range: 0.2...1, display: String(format: "%.2f", cameraSession.smartFraming.tightness))
+
+            HStack(spacing: 8) {
+                Text("Native")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 58, alignment: .leading)
+                ForEach(cameraSession.nativeStabilization.availableModes) { mode in
+                    Button(mode.rawValue) {
+                        cameraSession.setNativeStabilization(mode)
+                    }
+                    .buttonStyle(SegmentButtonStyle(isActive: cameraSession.nativeStabilization.selectedMode == mode))
+                }
+            }
+
+            PickerRow(title: "Horizon", selection: Binding(
+                get: { cameraSession.stabilizationSettings.horizonMode },
+                set: {
+                    var next = cameraSession.stabilizationSettings
+                    next.horizonMode = $0
+                    cameraSession.updateStabilizationSettings(next)
+                }
+            ))
+
+            PickerRow(title: "Digital", selection: Binding(
+                get: { cameraSession.stabilizationSettings.digitalMode },
+                set: {
+                    var next = cameraSession.stabilizationSettings
+                    next.digitalMode = $0
+                    cameraSession.updateStabilizationSettings(next)
+                }
+            ))
+
+            SliderRow(title: "Stab", value: stabilizationBinding(\.strength), range: 0...1, display: String(format: "%.2f", cameraSession.stabilizationSettings.strength))
+            SliderRow(title: "Crop", value: stabilizationBinding(\.cropSafetyMargin), range: 0...0.25, display: String(format: "%.0f%%", cameraSession.stabilizationSettings.cropSafetyMargin * 100))
 
             HStack {
                 Badge(title: "Subjects", value: "\(cameraSession.trackingState.subjects.count)")
                 Badge(title: "Confidence", value: "\(Int(cameraSession.trackingState.selectedConfidence * 100))%")
+                Badge(title: "State", value: cameraSession.trackingState.lifecycle.rawValue)
+                Badge(title: "Native", value: cameraSession.nativeStabilization.activeMode.rawValue)
                 Badge(title: "Horizon", value: cameraSession.horizonState.isAvailable ? String(format: "%+.1f deg", cameraSession.horizonState.rollDegrees) : "Unavailable")
             }
         }
@@ -546,6 +589,17 @@ private struct SmartControlPanel: View {
                 var next = cameraSession.smartFraming
                 next[keyPath: keyPath] = value
                 cameraSession.updateSmartFraming(next)
+            }
+        )
+    }
+
+    private func stabilizationBinding(_ keyPath: WritableKeyPath<StabilizationSettings, Double>) -> Binding<Double> {
+        Binding(
+            get: { cameraSession.stabilizationSettings[keyPath: keyPath] },
+            set: { value in
+                var next = cameraSession.stabilizationSettings
+                next[keyPath: keyPath] = value
+                cameraSession.updateStabilizationSettings(next)
             }
         )
     }

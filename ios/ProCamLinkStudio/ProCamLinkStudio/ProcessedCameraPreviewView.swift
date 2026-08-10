@@ -47,7 +47,9 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
             orientation: view.previewOrientation,
             adjustments: cameraSession.imageAdjustments,
             framing: cameraSession.smartFraming,
-            tracking: cameraSession.trackingState
+            tracking: cameraSession.trackingState,
+            horizon: cameraSession.horizonState,
+            stabilization: cameraSession.stabilizationSettings
         )
         context.coordinator.tapHandler = tapHandler
         cameraSession.setFrameConsumer(context.coordinator)
@@ -64,7 +66,9 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
             orientation: uiView.previewOrientation,
             adjustments: cameraSession.imageAdjustments,
             framing: cameraSession.smartFraming,
-            tracking: cameraSession.trackingState
+            tracking: cameraSession.trackingState,
+            horizon: cameraSession.horizonState,
+            stabilization: cameraSession.stabilizationSettings
         )
         context.coordinator.tapHandler = tapHandler
         cameraSession.setFrameConsumer(context.coordinator)
@@ -83,7 +87,10 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
     private var adjustments = ImageAdjustmentState.neutral
     private var framing = SmartFramingSettings()
     private var tracking = TrackingState()
+    private var horizon = HorizonState()
+    private var stabilization = StabilizationSettings()
     private var smoothedCrop = CGRect(x: 0, y: 0, width: 1, height: 1)
+    private var smoothedCorrectionDegrees = 0.0
     private let stateQueue = DispatchQueue(label: "studio.procamlink.preview.renderer")
 
     func attach(to view: MTKView) {
@@ -100,7 +107,9 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
         orientation: PreviewOrientation,
         adjustments: ImageAdjustmentState,
         framing: SmartFramingSettings,
-        tracking: TrackingState
+        tracking: TrackingState,
+        horizon: HorizonState,
+        stabilization: StabilizationSettings
     ) {
         stateQueue.async {
             self.fillMode = fillMode
@@ -108,6 +117,8 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             self.adjustments = adjustments
             self.framing = framing
             self.tracking = tracking
+            self.horizon = horizon
+            self.stabilization = stabilization
         }
     }
 
@@ -131,7 +142,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             return
         }
 
-        let snapshot = stateQueue.sync { (latestPixelBuffer, fillMode, orientation, adjustments, framing, tracking) }
+        let snapshot = stateQueue.sync { (latestPixelBuffer, fillMode, orientation, adjustments, framing, tracking, horizon, stabilization) }
         guard let pixelBuffer = snapshot.0 else {
             return
         }
@@ -140,6 +151,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             var image = CIImage(cvPixelBuffer: pixelBuffer)
                 .oriented(forExifOrientation: snapshot.2.exifOrientation)
             image = applySmartFraming(snapshot.4, tracking: snapshot.5, to: image)
+            image = applyStabilization(snapshot.7, horizon: snapshot.6, to: image)
             image = apply(adjustments: snapshot.3, to: image)
             image = image.transformedForDisplay(in: view.drawableSize, fillMode: snapshot.1)
 
@@ -220,7 +232,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
         }
 
         let source = image.extent
-        guard let targetRect = tracking.lastSelectedRect ?? tracking.subjects.first?.normalizedRect else {
+        guard let targetRect = targetRect(for: tracking, framing: framing) else {
             smoothedCrop = smoothedCrop.smoothed(toward: CGRect(x: 0, y: 0, width: 1, height: 1), amount: 0.04)
             return crop(image, normalizedCrop: smoothedCrop)
         }
@@ -232,6 +244,15 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
 
         let cropped = crop(image, normalizedCrop: smoothedCrop)
         return cropped.transformed(by: CGAffineTransform(translationX: source.minX - cropped.extent.minX, y: source.minY - cropped.extent.minY))
+    }
+
+    private func targetRect(for tracking: TrackingState, framing: SmartFramingSettings) -> CGRect? {
+        if framing.mode == .group || tracking.mode == .group {
+            guard !tracking.subjects.isEmpty else { return tracking.predictedSelectedRect ?? tracking.lastSelectedRect }
+            let union = tracking.subjects.map(\.normalizedRect).reduce(tracking.subjects[0].normalizedRect) { $0.union($1) }
+            return union.insetBy(dx: -CGFloat(framing.groupSafetyMargin), dy: -CGFloat(framing.groupSafetyMargin)).clampedUnit
+        }
+        return tracking.predictedSelectedRect ?? tracking.lastSelectedRect ?? tracking.subjects.first?.normalizedRect
     }
 
     private func desiredCrop(for target: CGRect, framing: SmartFramingSettings) -> CGRect {
@@ -262,7 +283,8 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             break
         }
 
-        center.y += CGFloat(framing.headroom) * cropSize
+        center.x += CGFloat(framing.horizontalBias + framing.lookRoom) * cropSize
+        center.y += CGFloat(framing.headroom + framing.verticalBias) * cropSize
         return CGRect(x: center.x - cropSize / 2, y: center.y - cropSize / 2, width: cropSize, height: cropSize)
     }
 
@@ -275,6 +297,47 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             height: source.height * normalizedCrop.height
         )
         return image.cropped(to: rect)
+    }
+
+    private func applyStabilization(_ settings: StabilizationSettings, horizon: HorizonState, to image: CIImage) -> CIImage {
+        guard horizon.isAvailable else { return image }
+
+        var targetCorrection = 0.0
+        switch settings.horizonMode {
+        case .off:
+            targetCorrection = 0
+        case .levelAssist:
+            targetCorrection = -horizon.smoothedRollDegrees * settings.strength * 0.35
+        case .horizonLock:
+            targetCorrection = -horizon.smoothedRollDegrees * settings.strength
+        }
+
+        switch settings.digitalMode {
+        case .off:
+            break
+        case .low:
+            targetCorrection += -horizon.smoothedRollDegrees * 0.08
+        case .medium:
+            targetCorrection += -horizon.smoothedRollDegrees * 0.16
+        case .strong:
+            targetCorrection += -horizon.smoothedRollDegrees * 0.28
+        }
+
+        targetCorrection = min(max(targetCorrection, -settings.maxCorrectionAngle), settings.maxCorrectionAngle)
+        smoothedCorrectionDegrees = smoothedCorrectionDegrees * settings.smoothing + targetCorrection * (1 - settings.smoothing)
+        guard abs(smoothedCorrectionDegrees) > 0.05 else { return image }
+
+        let source = image.extent
+        let radians = CGFloat(smoothedCorrectionDegrees * .pi / 180)
+        let rotated = image
+            .transformed(by: CGAffineTransform(translationX: -source.midX, y: -source.midY))
+            .transformed(by: CGAffineTransform(rotationAngle: radians))
+            .transformed(by: CGAffineTransform(translationX: source.midX, y: source.midY))
+
+        let safety = min(max(CGFloat(settings.cropSafetyMargin), 0), 0.25)
+        let insetX = source.width * safety
+        let insetY = source.height * safety
+        return rotated.cropped(to: source.insetBy(dx: insetX, dy: insetY))
     }
 
     private func adjustedSaturation(_ adjustments: ImageAdjustmentState) -> Double {

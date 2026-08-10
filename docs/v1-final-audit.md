@@ -17,12 +17,15 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | On-device human/person rectangle detection | IMPLEMENTED + SOFTWARE PROCESSING | Uses Vision human rectangle detection when available. |
 | Multi-subject overlay | IMPLEMENTED + SOFTWARE PROCESSING | Preview overlay draws detected subject boxes and confidence. |
 | Tap selected subject | IMPLEMENTED + SOFTWARE PROCESSING | Tap point selects nearest detected subject. |
-| Maintain selected target across frames | IMPLEMENTED + SOFTWARE PROCESSING | Uses nearest-neighbor matching between Vision updates; full re-identification is not claimed. |
-| Group tracking mode | NOT IMPLEMENTED | Required before final v1.0. |
+| Maintain selected target across frames | IMPLEMENTED + SOFTWARE PROCESSING | Uses position, size, velocity prediction, kind, age, and selected-target continuity bias. Full biometric re-identification is not claimed. |
+| Tracking modes | IMPLEMENTED + SOFTWARE PROCESSING | Face, Person, Group, Manual Subject, Auto Best Subject. |
+| Group tracking mode | IMPLEMENTED + SOFTWARE PROCESSING | Computes stable group bounds from visible subjects. |
 | Auto reframe / smart follow preview | IMPLEMENTED + SOFTWARE PROCESSING | Preview crop is smoothed and follows selected/group subjects. |
 | Auto reframe recorded/streamed output | NOT IMPLEMENTED | Required before final v1.0 if smart framed output is enabled. |
 | Subject loss recovery | IMPLEMENTED + SOFTWARE PROCESSING | Holds last frame briefly and widens smoothly on loss. |
-| Face-priority autofocus/exposure | NOT IMPLEMENTED | Required before final v1.0. |
+| Velocity + predictive follow | IMPLEMENTED + SOFTWARE PROCESSING | Predicts near-future target position with damped velocity. |
+| Look-room / headroom controls | IMPLEMENTED + SOFTWARE PROCESSING | Controls affect smart crop. Face-direction landmark inference is not yet implemented. |
+| Face-priority autofocus/exposure | IMPLEMENTED + HARDWARE WIRED | Uses tracked subject center as AF/AE metering point where public camera APIs support points; respects manual focus/exposure. |
 | Skin highlight warning | NOT IMPLEMENTED | Required before final v1.0. |
 | Smart zoom | IMPLEMENTED + SOFTWARE PROCESSING | Preview smart crop respects configured min/max digital zoom. |
 | Smart lens recommendation | NOT IMPLEMENTED | Required before final v1.0. |
@@ -32,10 +35,13 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Native stabilization mode discovery | NOT IMPLEMENTED | Required before final v1.0. |
+| Native stabilization mode discovery | IMPLEMENTED + HARDWARE WIRED | Enumerates active format-supported Apple stabilization modes. |
+| Native stabilization mode application | IMPLEMENTED + HARDWARE WIRED | Applies selected mode to video/movie capture connections. |
 | CoreMotion horizon indicator | IMPLEMENTED + SOFTWARE PROCESSING | Roll is read locally from CoreMotion and rendered in preview. |
-| Horizon lock / roll correction | NOT IMPLEMENTED | Required before final v1.0. |
-| Digital post stabilization | NOT IMPLEMENTED | Required before final v1.0 if enabled. |
+| Horizon lock / roll correction | IMPLEMENTED + SOFTWARE PROCESSING | Preview transform uses smoothed CoreMotion roll with max correction and crop safety. |
+| Digital post stabilization | IMPLEMENTED + SOFTWARE PROCESSING | Preview transform supports Off/Low/Medium/Strong. Recorded/streamed processed-output path is not complete. |
+| Analysis scheduler | IMPLEMENTED + SOFTWARE PROCESSING | Vision analysis runs at independent reduced rate. |
+| Resource budget manager | IMPLEMENTED + SOFTWARE PROCESSING | Tracks Vision analysis time against FPS frame budget; broader capture/GPU/encoder timing still required. |
 
 ## Monitoring / Scopes
 

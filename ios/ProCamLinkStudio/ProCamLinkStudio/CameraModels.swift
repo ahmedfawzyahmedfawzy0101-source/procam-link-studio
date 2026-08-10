@@ -130,6 +130,54 @@ struct CameraCapabilities: Equatable {
     )
 }
 
+enum NativeStabilizationMode: String, CaseIterable, Identifiable {
+    case off = "Off"
+    case standard = "Standard"
+    case cinematic = "Cinematic"
+    case cinematicExtended = "Cinematic+"
+    case auto = "Auto"
+
+    var id: String { rawValue }
+
+    var avMode: AVCaptureVideoStabilizationMode {
+        switch self {
+        case .off:
+            return .off
+        case .standard:
+            return .standard
+        case .cinematic:
+            return .cinematic
+        case .cinematicExtended:
+            return .cinematicExtended
+        case .auto:
+            return .auto
+        }
+    }
+
+    static func from(_ mode: AVCaptureVideoStabilizationMode) -> NativeStabilizationMode {
+        switch mode {
+        case .standard:
+            return .standard
+        case .cinematic:
+            return .cinematic
+        case .cinematicExtended:
+            return .cinematicExtended
+        case .auto:
+            return .auto
+        default:
+            return .off
+        }
+    }
+}
+
+struct NativeStabilizationState: Equatable {
+    var availableModes: [NativeStabilizationMode] = [.off]
+    var selectedMode: NativeStabilizationMode = .off
+    var activeMode: NativeStabilizationMode = .off
+    var cropEstimate: Double = 0
+    var warning: String?
+}
+
 struct CameraFormatOption: Identifiable, Equatable {
     let id: String
     let format: AVCaptureDevice.Format

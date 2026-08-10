@@ -125,6 +125,24 @@ Implemented in this milestone:
 - CoreMotion horizon state.
 - Preview-only horizon indicator.
 
+## Milestone 7 Scope
+
+Implemented in this milestone:
+
+- Tracking modes: Face, Person, Group, Manual Subject, Auto Best Subject.
+- Tracking lifecycle states: TRACKING, TEMPORARILY_LOST, SEARCHING, REACQUIRED, MANUAL_FALLBACK.
+- Improved identity persistence using bounding-box position, size, predicted motion, subject kind, target age, and selected-target bias.
+- Velocity estimation and predictive target rectangle.
+- Identity-switch protection through selected-target bias and minimum lock state.
+- Group bounds framing for group mode.
+- Smart framing controls added for look room, horizontal bias, vertical bias, and group safety margin.
+- Native stabilization mode enumeration from the active `AVCaptureDevice.Format`.
+- Native stabilization application through `AVCaptureConnection.preferredVideoStabilizationMode`.
+- Horizon lock / digital stabilization preview transform using CoreMotion roll and GPU-rendered Core Image transforms.
+- Central analysis scheduler for reduced-rate Vision processing.
+- Performance budget callback for tracking analysis time and frame-budget warning.
+- Throttled smart AF/AE metering toward the selected subject when manual focus/exposure are not active.
+
 Not claimed complete in this milestone:
 
 - Histogram/RGB histogram/waveform/zebras/focus peaking rendering.

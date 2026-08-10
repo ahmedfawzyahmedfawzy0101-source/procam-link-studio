@@ -22,8 +22,11 @@ final class CameraSessionManager: ObservableObject {
     @Published var monitoringState = MonitoringState()
     @Published var imageAdjustments = ImageAdjustmentState.neutral
     @Published var smartFraming = SmartFramingSettings()
+    @Published var stabilizationSettings = StabilizationSettings()
+    @Published var performanceBudget = PerformanceBudgetState()
     @Published private(set) var trackingState = TrackingState()
     @Published private(set) var horizonState = HorizonState()
+    @Published private(set) var nativeStabilization = NativeStabilizationState()
     @Published var selectedRecordingCodec: RecordingCodec = .hevc
     @Published private(set) var availableRecordingCodecs: [RecordingCodec] = [.h264]
     @Published private(set) var recordingState = RecordingState()
@@ -43,16 +46,23 @@ final class CameraSessionManager: ObservableObject {
     private let intelligentCamera = IntelligentCameraManager()
     private var activeDevice: AVCaptureDevice?
     private var thermalObserver: NSObjectProtocol?
+    private var lastSmartMeteringUpdate = Date.distantPast
 
     init() {
         authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
         loadCustomProfiles()
         updateThermalState()
         intelligentCamera.onSubjectsUpdated = { [weak self] state in
-            Task { @MainActor in self?.trackingState = state }
+            Task { @MainActor in
+                self?.trackingState = state
+                self?.applySmartMeteringIfNeeded(state)
+            }
         }
         intelligentCamera.onHorizonUpdated = { [weak self] state in
             Task { @MainActor in self?.horizonState = state }
+        }
+        intelligentCamera.onPerformanceUpdated = { [weak self] state in
+            Task { @MainActor in self?.performanceBudget = state }
         }
         intelligentCamera.startMotion()
         thermalObserver = NotificationCenter.default.addObserver(
@@ -172,6 +182,20 @@ final class CameraSessionManager: ObservableObject {
 
     func updateSmartFraming(_ settings: SmartFramingSettings) {
         smartFraming = settings
+    }
+
+    func setTrackingMode(_ mode: TrackingMode) {
+        intelligentCamera.setTrackingMode(mode)
+    }
+
+    func updateStabilizationSettings(_ settings: StabilizationSettings) {
+        stabilizationSettings = settings
+    }
+
+    func setNativeStabilization(_ mode: NativeStabilizationMode) {
+        guard nativeStabilization.availableModes.contains(mode) else { return }
+        nativeStabilization.selectedMode = mode
+        applyNativeStabilization(mode)
     }
 
     func updateImageAdjustments(_ adjustments: ImageAdjustmentState) {
@@ -443,6 +467,20 @@ final class CameraSessionManager: ObservableObject {
         }
     }
 
+    func smartFocusAndExpose(on subject: DetectedSubject) {
+        guard exposureState.mode != .manual, focusState.mode != .manual else { return }
+        let point = CGPoint(x: subject.normalizedRect.midX, y: subject.normalizedRect.midY)
+        focusAndExpose(at: point)
+    }
+
+    private func applySmartMeteringIfNeeded(_ state: TrackingState) {
+        guard Date().timeIntervalSince(lastSmartMeteringUpdate) > 0.45 else { return }
+        guard let subject = state.subjects.first(where: { $0.id == state.selectedSubjectID }) else { return }
+        guard subject.confidence > 0.45 else { return }
+        lastSmartMeteringUpdate = Date()
+        smartFocusAndExpose(on: subject)
+    }
+
     func setWhiteBalanceMode(_ mode: WhiteBalanceControlMode) {
         guard let device = activeDevice else { return }
         whiteBalanceState.mode = mode
@@ -566,12 +604,55 @@ final class CameraSessionManager: ObservableObject {
             supportsHDR: device.formats.contains { $0.isVideoHDRSupported }
         )
 
+        refreshNativeStabilization(for: activeFormat)
+
         let codecs = RecordingCodec.allCases.filter { movieOutput.availableVideoCodecTypes.contains($0.avCodec) }
         availableRecordingCodecs = codecs.isEmpty ? [.h264] : codecs
         if !availableRecordingCodecs.contains(selectedRecordingCodec) {
             selectedRecordingCodec = availableRecordingCodecs[0]
         }
         _ = refreshStorageWarning()
+    }
+
+    private func refreshNativeStabilization(for format: AVCaptureDevice.Format) {
+        let supported = NativeStabilizationMode.allCases.filter { mode in
+            mode == .off || format.isVideoStabilizationModeSupported(mode.avMode)
+        }
+        nativeStabilization.availableModes = supported.isEmpty ? [.off] : supported
+        if !nativeStabilization.availableModes.contains(nativeStabilization.selectedMode) {
+            nativeStabilization.selectedMode = .off
+            nativeStabilization.warning = "Format changed; stabilization reset"
+        } else {
+            nativeStabilization.warning = nil
+        }
+        applyNativeStabilization(nativeStabilization.selectedMode)
+    }
+
+    private func applyNativeStabilization(_ mode: NativeStabilizationMode) {
+        let videoConnection = videoOutput.connection(with: .video)
+        let movieConnection = movieOutput.connection(with: .video)
+        [videoConnection, movieConnection].forEach { connection in
+            guard let connection, connection.isVideoStabilizationSupported else { return }
+            connection.preferredVideoStabilizationMode = mode.avMode
+        }
+
+        nativeStabilization.activeMode = NativeStabilizationMode.from(videoConnection?.activeVideoStabilizationMode ?? .off)
+        nativeStabilization.cropEstimate = estimatedCrop(for: nativeStabilization.activeMode)
+    }
+
+    private func estimatedCrop(for mode: NativeStabilizationMode) -> Double {
+        switch mode {
+        case .off:
+            return 0
+        case .standard:
+            return 4
+        case .cinematic:
+            return 8
+        case .cinematicExtended:
+            return 12
+        case .auto:
+            return 6
+        }
     }
 
     private func applyFormatGoal(_ goal: CameraProfile.FormatGoal) {
