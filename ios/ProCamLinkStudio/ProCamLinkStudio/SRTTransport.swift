@@ -9,7 +9,7 @@ final class SRTTransport {
     private var sendQueue: [(data: Data, presentationTime: TimeInterval)] = []
     private var isSending = false
     private var droppedQueuePackets = 0
-    private var handle: UnsafeMutablePointer<ProCamSRTHandle>?
+    private var handle: OpaquePointer?
     private(set) var state: SRTConnectionState = .disconnected {
         didSet { onStateChanged?(state) }
     }
@@ -74,7 +74,7 @@ final class SRTTransport {
         let passphrase = configuration.passphrase
         let streamID = configuration.streamID
 
-        let connectedHandle: UnsafeMutablePointer<ProCamSRTHandle>? = host.withCString { hostPointer in
+        let connectedHandle: OpaquePointer? = host.withCString { hostPointer in
             passphrase.withCString { passphrasePointer in
                 streamID.withCString { streamIDPointer in
                     var cConfig = ProCamSRTConfig(
