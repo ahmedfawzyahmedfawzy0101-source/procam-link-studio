@@ -49,6 +49,22 @@ enum WhiteBalanceControlMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum RecordingCodec: String, CaseIterable, Identifiable {
+    case h264 = "H.264"
+    case hevc = "HEVC"
+
+    var id: String { rawValue }
+
+    var avCodec: AVVideoCodecType {
+        switch self {
+        case .h264:
+            return .h264
+        case .hevc:
+            return .hevc
+        }
+    }
+}
+
 struct CameraCapabilities: Equatable {
     var minZoom: CGFloat
     var maxZoom: CGFloat
@@ -224,6 +240,13 @@ struct ImageAdjustmentState: Equatable {
 struct ThermalStateLabel: Equatable {
     let title: String
     let isRisky: Bool
+}
+
+struct RecordingState: Equatable {
+    var isRecording = false
+    var elapsedSeconds: TimeInterval = 0
+    var lastRecordingPath: String?
+    var storageWarning: String?
 }
 
 func shutterLabel(seconds: Double) -> String {

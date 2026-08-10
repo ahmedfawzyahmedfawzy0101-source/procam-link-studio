@@ -21,6 +21,9 @@ final class CameraSessionManager: ObservableObject {
     @Published var whiteBalanceState = WhiteBalanceState()
     @Published var monitoringState = MonitoringState()
     @Published var imageAdjustments = ImageAdjustmentState.neutral
+    @Published var selectedRecordingCodec: RecordingCodec = .hevc
+    @Published private(set) var availableRecordingCodecs: [RecordingCodec] = [.h264]
+    @Published private(set) var recordingState = RecordingState()
     @Published private(set) var thermalState = ThermalStateLabel(title: "Nominal", isRisky: false)
 
     private let sessionQueue = DispatchQueue(label: "studio.procamlink.camera.session")
@@ -28,6 +31,10 @@ final class CameraSessionManager: ObservableObject {
     private var currentInput: AVCaptureDeviceInput?
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sampleBufferProxy = CameraSampleBufferProxy()
+    private let movieOutput = AVCaptureMovieFileOutput()
+    private var recordingDelegate: MovieRecordingDelegate?
+    private var recordingStartedAt: Date?
+    private var recordingTimer: Timer?
     private var activeDevice: AVCaptureDevice?
     private var thermalObserver: NSObjectProtocol?
 
@@ -68,6 +75,7 @@ final class CameraSessionManager: ObservableObject {
         }
 
         let videoOutput = videoOutput
+        let movieOutput = movieOutput
         let result = await withCheckedContinuation { continuation in
             sessionQueue.async { [session, currentInput] in
                 do {
@@ -96,6 +104,10 @@ final class CameraSessionManager: ObservableObject {
                         if session.canAddOutput(videoOutput) {
                             session.addOutput(videoOutput)
                         }
+                    }
+
+                    if !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) {
+                        session.addOutput(movieOutput)
                     }
                     session.commitConfiguration()
 
@@ -142,6 +154,49 @@ final class CameraSessionManager: ObservableObject {
 
     func resetImageAdjustments() {
         imageAdjustments = .neutral
+    }
+
+    func setRecordingCodec(_ codec: RecordingCodec) {
+        guard availableRecordingCodecs.contains(codec) else { return }
+        selectedRecordingCodec = codec
+    }
+
+    func toggleRecording() {
+        recordingState.isRecording ? stopRecording() : startRecording()
+    }
+
+    func startRecording() {
+        guard !movieOutput.isRecording else { return }
+        guard refreshStorageWarning() == nil else { return }
+
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let filename = "ProCamLinkStudio-\(Self.recordingTimestamp()).mov"
+        let url = directory.appendingPathComponent(filename)
+        let codec = selectedRecordingCodec
+
+        if let connection = movieOutput.connection(with: .video),
+           movieOutput.availableVideoCodecTypes.contains(codec.avCodec) {
+            movieOutput.setOutputSettings([AVVideoCodecKey: codec.avCodec], for: connection)
+        }
+
+        let delegate = MovieRecordingDelegate { [weak self] outputURL, error in
+            Task { @MainActor in
+                self?.finishRecording(url: outputURL, error: error)
+            }
+        }
+        recordingDelegate = delegate
+        recordingStartedAt = Date()
+        recordingState.isRecording = true
+        recordingState.elapsedSeconds = 0
+        recordingState.lastRecordingPath = nil
+        movieOutput.startRecording(to: url, recordingDelegate: delegate)
+        startRecordingTimer()
+    }
+
+    func stopRecording() {
+        guard movieOutput.isRecording else { return }
+        movieOutput.stopRecording()
     }
 
     func setPreviewFillMode(_ mode: PreviewFillMode) {
@@ -458,6 +513,13 @@ final class CameraSessionManager: ObservableObject {
             maxExposureBias: device.maxExposureTargetBias,
             supportsHDR: device.formats.contains { $0.isVideoHDRSupported }
         )
+
+        let codecs = RecordingCodec.allCases.filter { movieOutput.availableVideoCodecTypes.contains($0.avCodec) }
+        availableRecordingCodecs = codecs.isEmpty ? [.h264] : codecs
+        if !availableRecordingCodecs.contains(selectedRecordingCodec) {
+            selectedRecordingCodec = availableRecordingCodecs[0]
+        }
+        _ = refreshStorageWarning()
     }
 
     private func updateThermalState() {
@@ -474,6 +536,55 @@ final class CameraSessionManager: ObservableObject {
             thermalState = ThermalStateLabel(title: "Unknown", isRisky: true)
         }
     }
+
+    private func finishRecording(url: URL?, error: Error?) {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        recordingState.isRecording = false
+        recordingState.elapsedSeconds = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        recordingStartedAt = nil
+
+        if let error {
+            lastError = error.localizedDescription
+        } else {
+            recordingState.lastRecordingPath = url?.path
+            lastError = nil
+        }
+    }
+
+    private func startRecordingTimer() {
+        recordingTimer?.invalidate()
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let recordingStartedAt = self.recordingStartedAt else { return }
+                self.recordingState.elapsedSeconds = Date().timeIntervalSince(recordingStartedAt)
+                _ = self.refreshStorageWarning()
+            }
+        }
+    }
+
+    private func refreshStorageWarning() -> String? {
+        do {
+            let values = try FileManager.default
+                .urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            let available = values.volumeAvailableCapacityForImportantUsage ?? 0
+            if available < 1_000_000_000 {
+                recordingState.storageWarning = "Low storage"
+            } else {
+                recordingState.storageWarning = nil
+            }
+        } catch {
+            recordingState.storageWarning = nil
+        }
+        return recordingState.storageWarning
+    }
+
+    private static func recordingTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: Date())
+    }
 }
 
 enum CameraSessionError: LocalizedError {
@@ -484,6 +595,23 @@ enum CameraSessionError: LocalizedError {
         case .unsupportedInput:
             return "This camera cannot be added to the current capture session."
         }
+    }
+}
+
+private final class MovieRecordingDelegate: NSObject, AVCaptureFileOutputRecordingDelegate {
+    private let finishHandler: (URL?, Error?) -> Void
+
+    init(finishHandler: @escaping (URL?, Error?) -> Void) {
+        self.finishHandler = finishHandler
+    }
+
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didFinishRecordingTo outputFileURL: URL,
+        from connections: [AVCaptureConnection],
+        error: Error?
+    ) {
+        finishHandler(outputFileURL, error)
     }
 }
 

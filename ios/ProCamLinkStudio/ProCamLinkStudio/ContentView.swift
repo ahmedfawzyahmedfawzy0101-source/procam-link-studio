@@ -146,6 +146,11 @@ private struct TopTelemetryBar: View {
                 }
                 .buttonStyle(CompactButtonStyle())
             }
+
+            Button(cameraSession.recordingState.isRecording ? "Stop" : "Rec") {
+                cameraSession.toggleRecording()
+            }
+            .buttonStyle(RecordButtonStyle(isRecording: cameraSession.recordingState.isRecording))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 12)
@@ -374,8 +379,35 @@ private struct VideoControlPanel: View {
             HStack {
                 Badge(title: "HDR", value: cameraSession.capabilities.supportsHDR ? "Supported" : "Unavailable")
                 Badge(title: "Color", value: cameraSession.capabilities.supportsHDR ? "SDR/HDR" : "Rec.709")
+                Badge(title: "Rec", value: cameraSession.selectedRecordingCodec.rawValue)
+                Badge(title: "Timer", value: recordingTime)
+            }
+
+            HStack(spacing: 8) {
+                ForEach(cameraSession.availableRecordingCodecs) { codec in
+                    Button(codec.rawValue) {
+                        cameraSession.setRecordingCodec(codec)
+                    }
+                    .buttonStyle(SegmentButtonStyle(isActive: cameraSession.selectedRecordingCodec == codec))
+                }
+                if let warning = cameraSession.recordingState.storageWarning {
+                    Text(warning)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.yellow)
+                }
+                if let path = cameraSession.recordingState.lastRecordingPath {
+                    Text((path as NSString).lastPathComponent)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(1)
+                }
             }
         }
+    }
+
+    private var recordingTime: String {
+        let seconds = Int(cameraSession.recordingState.elapsedSeconds.rounded())
+        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
     }
 }
 
@@ -695,5 +727,19 @@ private struct LensButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(.white.opacity(isActive ? 0.55 : 0.16), lineWidth: 1)
             }
+    }
+}
+
+private struct RecordButtonStyle: ButtonStyle {
+    let isRecording: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(isRecording ? Color.red.opacity(configuration.isPressed ? 0.65 : 0.86) : Color.white.opacity(configuration.isPressed ? 0.24 : 0.14))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 }

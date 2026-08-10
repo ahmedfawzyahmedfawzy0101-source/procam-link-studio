@@ -73,6 +73,17 @@ Implemented in this milestone:
 - Look intensity slider.
 - Reset All for image adjustments.
 
+## Milestone 3 Scope
+
+Implemented in this milestone:
+
+- Local recording foundation using `AVCaptureMovieFileOutput`.
+- Start/stop recording control.
+- Recording timer.
+- H.264/HEVC codec selector limited to `availableVideoCodecTypes`.
+- Storage warning when available important-use capacity is below 1 GB.
+- Last recording filename display after capture completes.
+
 Not claimed complete in this milestone:
 
 - Histogram/RGB histogram/waveform/zebras/focus peaking rendering.
