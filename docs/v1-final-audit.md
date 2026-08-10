@@ -21,7 +21,8 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | Tracking modes | IMPLEMENTED + SOFTWARE PROCESSING | Face, Person, Group, Manual Subject, Auto Best Subject. |
 | Group tracking mode | IMPLEMENTED + SOFTWARE PROCESSING | Computes stable group bounds from visible subjects. |
 | Auto reframe / smart follow preview | IMPLEMENTED + SOFTWARE PROCESSING | Preview crop is smoothed and follows selected/group subjects. |
-| Auto reframe recorded/streamed output | NOT IMPLEMENTED | Required before final v1.0 if smart framed output is enabled. |
+| Auto reframe recorded output | IMPLEMENTED + SOFTWARE PROCESSING | Processed master recording uses the shared processed frame pipeline without monitoring overlays. |
+| Auto reframe streamed output | NOT IMPLEMENTED | Requires SRT/WebRTC transport integration. |
 | Subject loss recovery | IMPLEMENTED + SOFTWARE PROCESSING | Holds last frame briefly and widens smoothly on loss. |
 | Velocity + predictive follow | IMPLEMENTED + SOFTWARE PROCESSING | Predicts near-future target position with damped velocity. |
 | Look-room / headroom controls | IMPLEMENTED + SOFTWARE PROCESSING | Controls affect smart crop. Face-direction landmark inference is not yet implemented. |
@@ -40,7 +41,7 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | Professional stabilization presets | IMPLEMENTED + HARDWARE WIRED | Tripod, Handheld, Walking, Running, Follow Cam choose only supported native modes and digital settings. |
 | CoreMotion horizon indicator | IMPLEMENTED + SOFTWARE PROCESSING | Roll is read locally from CoreMotion and rendered in preview. |
 | Horizon lock / roll correction | IMPLEMENTED + SOFTWARE PROCESSING | Preview transform uses smoothed CoreMotion roll with max correction and crop safety. |
-| Digital post stabilization | IMPLEMENTED + SOFTWARE PROCESSING | Preview transform supports Off/Low/Medium/Strong. Recorded/streamed processed-output path is not complete. |
+| Digital post stabilization | IMPLEMENTED + SOFTWARE PROCESSING | Preview and processed master recording use the shared Core Image transform. Streaming output still requires transport wiring. |
 | Analysis scheduler | IMPLEMENTED + SOFTWARE PROCESSING | Vision analysis runs at independent reduced rate. |
 | Resource budget manager | IMPLEMENTED + SOFTWARE PROCESSING | Tracks Vision analysis time against FPS frame budget; broader capture/GPU/encoder timing still required. |
 
@@ -61,9 +62,24 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | --- | --- | --- |
 | Local recording | IMPLEMENTED + HARDWARE WIRED | Uses `AVCaptureMovieFileOutput`. |
 | H.264/HEVC recording codec detection | IMPLEMENTED + HARDWARE WIRED | Codec list comes from `availableVideoCodecTypes`. |
+| Clean master recording | IMPLEMENTED + HARDWARE WIRED | Uses `AVCaptureMovieFileOutput` with selected codec and optional session audio. |
+| Processed master recording | IMPLEMENTED + SOFTWARE PROCESSING | Uses `AVAssetWriterInputPixelBufferAdaptor` and the shared processed frame pipeline; monitoring overlays are excluded by default. |
+| Recording quality presets | IMPLEMENTED + SOFTWARE PROCESSING | Match, 4K Pro, 1080p Pro, Creator, Low Light. |
 | Pre-record buffer | NOT IMPLEMENTED | Required before final v1.0. |
 | Dual master/proxy recording | NOT IMPLEMENTED | Required before final v1.0 where performance permits. |
-| Audio meter / input tools | NOT IMPLEMENTED | Required before final v1.0. |
+| Audio meter / input tools | IMPLEMENTED + HARDWARE WIRED | Requests microphone permission, captures mic sample buffers, displays RMS/peak level, and reports A/V timestamp offset. |
+| Reusable VideoToolbox encoder | IMPLEMENTED + SOFTWARE PROCESSING | H.264/HEVC real-time encoder foundation exists for future streaming/proxy paths. |
+
+## Streaming / Windows
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| SRT transport | NOT IMPLEMENTED | Requires linking Haivision `libsrt.xcframework` and `libcrypto.xcframework`; no fake UDP transport is claimed. |
+| Clean stream path | NOT IMPLEMENTED | Requires transport sender wiring. |
+| Processed stream path | NOT IMPLEMENTED | Requires transport sender wiring from the shared processed frame pipeline and VideoToolbox encoder. |
+| Windows receiver | NOT IMPLEMENTED | Not started. |
+| Windows remote controls | NOT IMPLEMENTED | Not started. |
+| Windows virtual camera | NOT IMPLEMENTED | Not started. |
 
 ## Image / Looks
 

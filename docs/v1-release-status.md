@@ -186,6 +186,48 @@ Not claimed complete in this milestone:
 - Profile persistence.
 - Final v1.0 IPA.
 
+## Milestone 11 Scope
+
+Implemented in this milestone:
+
+- Shared `ProcessedFramePipeline` used by the preview renderer and reusable for record/stream paths.
+- Preview image processing, smart reframe, horizon/digital stabilization, looks, zebras, false color, and focus peaking now live in one `CVPixelBuffer`/Core Image path.
+- Preview monitoring overlays remain optional through `FrameProcessingState.includeMonitoring`.
+- Processed master recording path using `AVAssetWriter` and `AVAssetWriterInputPixelBufferAdaptor`.
+- Processed recording excludes monitoring overlays by default.
+- Clean vs processed recording mode selector.
+- Recording quality presets: Match, 4K Pro, 1080p Pro, Creator, Low Light.
+- Processed recording frame/dropped-frame/output-resolution diagnostics.
+- Processed recording preserves capture timestamps and current preview orientation state.
+
+## Milestone 12 Scope
+
+Implemented in this milestone:
+
+- Optional microphone capture permission flow.
+- Microphone input added to `AVCaptureSession` when authorized and enabled.
+- Clean movie recording can include session microphone audio.
+- Processed master writer can include AAC audio through an audio `AVAssetWriterInput`.
+- Audio sample buffers are appended to processed recording while video frames use the processed pixel-buffer path.
+- Audio level and peak meter.
+- A/V timestamp offset diagnostics surfaced in the Video panel while recording.
+
+## Milestone 13 Scope
+
+Implemented in this milestone:
+
+- Reusable `VideoToolboxEncoder`.
+- H.264/HEVC codec mapping from existing recording codec selection.
+- Real-time encoder configuration with bitrate, FPS, keyframe interval, and no frame reordering.
+- Encoded sample buffers copied to `Data` for future transport layers.
+- Keyframe detection for downstream streaming packetization.
+
+Not claimed complete in this milestone:
+
+- SRT socket transport is not yet linked because iOS requires upstream `libsrt.xcframework` and `libcrypto.xcframework`.
+- Windows receiver/control/virtual camera.
+- Final v1.0 IPA.
+
 ## No Fake Controls Policy
 
 The UI should expose only controls with real backing behavior. Features that need later pipeline work are tracked here and should not appear as working controls until implemented.
