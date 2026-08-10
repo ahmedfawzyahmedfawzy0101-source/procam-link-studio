@@ -86,6 +86,54 @@ enum RecordingCodec: String, CaseIterable, Identifiable {
     }
 }
 
+enum RecordingMode: String, CaseIterable, Identifiable {
+    case cleanMaster = "Clean"
+    case processedMaster = "Processed"
+
+    var id: String { rawValue }
+}
+
+enum RecordingQualityPreset: String, CaseIterable, Identifiable {
+    case matchCamera = "Match"
+    case fourKPro = "4K Pro"
+    case fullHD60Pro = "1080p Pro"
+    case creatorPortrait = "Creator"
+    case lowLight = "Low Light"
+
+    var id: String { rawValue }
+
+    func dimensions(sourceWidth: Int, sourceHeight: Int) -> (width: Int, height: Int) {
+        let isPortrait = sourceHeight > sourceWidth
+        switch self {
+        case .matchCamera:
+            return (max(2, sourceWidth), max(2, sourceHeight))
+        case .fourKPro:
+            return isPortrait ? (2160, 3840) : (3840, 2160)
+        case .fullHD60Pro, .creatorPortrait, .lowLight:
+            return isPortrait ? (1080, 1920) : (1920, 1080)
+        }
+    }
+
+    func bitRate(codec: RecordingCodec, width: Int, height: Int) -> Int {
+        let megapixels = Double(width * height) / 1_000_000
+        let baseMbps: Double
+        switch self {
+        case .matchCamera:
+            baseMbps = megapixels >= 8 ? 72 : 28
+        case .fourKPro:
+            baseMbps = 82
+        case .fullHD60Pro:
+            baseMbps = 32
+        case .creatorPortrait:
+            baseMbps = 26
+        case .lowLight:
+            baseMbps = 38
+        }
+        let codecScale = codec == .hevc ? 0.72 : 1.0
+        return Int(baseMbps * codecScale * 1_000_000)
+    }
+}
+
 struct CameraCapabilities: Equatable {
     var minZoom: CGFloat
     var maxZoom: CGFloat
@@ -329,6 +377,10 @@ struct RecordingState: Equatable {
     var elapsedSeconds: TimeInterval = 0
     var lastRecordingPath: String?
     var storageWarning: String?
+    var droppedFrames = 0
+    var encodedFrames = 0
+    var outputResolution: String?
+    var syncStatus: String?
 }
 
 struct CameraProfile: Identifiable, Equatable, Codable {

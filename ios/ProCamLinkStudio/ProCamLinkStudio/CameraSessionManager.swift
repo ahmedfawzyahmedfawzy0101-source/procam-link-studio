@@ -24,12 +24,15 @@ final class CameraSessionManager: ObservableObject {
     @Published var smartFraming = SmartFramingSettings()
     @Published var stabilizationSettings = StabilizationSettings()
     @Published var performanceBudget = PerformanceBudgetState()
+    @Published private(set) var currentPreviewOrientation: PreviewOrientation = .portrait
     @Published private(set) var lensAssist = LensAssistState()
     @Published private(set) var trackingState = TrackingState()
     @Published private(set) var horizonState = HorizonState()
     @Published private(set) var monitoringAnalysis = MonitoringAnalysisState()
     @Published private(set) var nativeStabilization = NativeStabilizationState()
     @Published var selectedRecordingCodec: RecordingCodec = .hevc
+    @Published var selectedRecordingMode: RecordingMode = .cleanMaster
+    @Published var selectedRecordingQuality: RecordingQualityPreset = .matchCamera
     @Published private(set) var availableRecordingCodecs: [RecordingCodec] = [.h264]
     @Published private(set) var recordingState = RecordingState()
     @Published private(set) var profiles: [CameraProfile] = CameraProfile.builtIns
@@ -42,9 +45,11 @@ final class CameraSessionManager: ObservableObject {
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sampleBufferProxy = CameraSampleBufferProxy()
     private let movieOutput = AVCaptureMovieFileOutput()
+    private let processedRecorder = ProcessedMasterRecorder()
     private var recordingDelegate: MovieRecordingDelegate?
     private var recordingStartedAt: Date?
     private var recordingTimer: Timer?
+    private var activeRecordingMode: RecordingMode?
     private let intelligentCamera = IntelligentCameraManager()
     private let monitoringAnalyzer = MonitoringAnalyzer()
     private var activeDevice: AVCaptureDevice?
@@ -71,6 +76,18 @@ final class CameraSessionManager: ObservableObject {
         }
         monitoringAnalyzer.onAnalysisUpdated = { [weak self] state in
             Task { @MainActor in self?.monitoringAnalysis = state }
+        }
+        processedRecorder.onStats = { [weak self] stats in
+            Task { @MainActor in
+                self?.recordingState.encodedFrames = stats.encodedFrames
+                self?.recordingState.droppedFrames = stats.droppedFrames
+                self?.recordingState.outputResolution = "\(stats.outputWidth)x\(stats.outputHeight)"
+            }
+        }
+        processedRecorder.onFinish = { [weak self] outputURL, error in
+            Task { @MainActor in
+                self?.finishRecording(url: outputURL, error: error)
+            }
         }
         intelligentCamera.startMotion()
         thermalObserver = NotificationCenter.default.addObserver(
@@ -179,8 +196,16 @@ final class CameraSessionManager: ObservableObject {
     func setFrameConsumer(_ consumer: CameraFrameConsumer?) {
         sampleBufferProxy.previewConsumer = consumer
         sampleBufferProxy.analysisHandler = { [weak self] pixelBuffer, timestamp in
-            self?.intelligentCamera.analyze(pixelBuffer: pixelBuffer, timestamp: timestamp)
-            self?.monitoringAnalyzer.analyze(pixelBuffer: pixelBuffer)
+            guard let self else { return }
+            self.intelligentCamera.analyze(pixelBuffer: pixelBuffer, timestamp: timestamp)
+            self.monitoringAnalyzer.analyze(pixelBuffer: pixelBuffer)
+            if self.activeRecordingMode == .processedMaster {
+                self.processedRecorder.append(
+                    pixelBuffer: pixelBuffer,
+                    timestamp: timestamp,
+                    state: self.currentFrameProcessingState(includeMonitoring: false)
+                )
+            }
         }
         videoOutput.setSampleBufferDelegate(sampleBufferProxy, queue: videoOutputQueue)
     }
@@ -316,13 +341,29 @@ final class CameraSessionManager: ObservableObject {
         selectedRecordingCodec = codec
     }
 
+    func setRecordingMode(_ mode: RecordingMode) {
+        guard !recordingState.isRecording else { return }
+        selectedRecordingMode = mode
+    }
+
+    func setRecordingQuality(_ quality: RecordingQualityPreset) {
+        guard !recordingState.isRecording else { return }
+        selectedRecordingQuality = quality
+    }
+
     func toggleRecording() {
         recordingState.isRecording ? stopRecording() : startRecording()
     }
 
     func startRecording() {
+        guard !recordingState.isRecording else { return }
         guard !movieOutput.isRecording else { return }
         guard refreshStorageWarning() == nil else { return }
+
+        if selectedRecordingMode == .processedMaster {
+            startProcessedRecording()
+            return
+        }
 
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
@@ -342,20 +383,33 @@ final class CameraSessionManager: ObservableObject {
         }
         recordingDelegate = delegate
         recordingStartedAt = Date()
+        activeRecordingMode = .cleanMaster
         recordingState.isRecording = true
         recordingState.elapsedSeconds = 0
         recordingState.lastRecordingPath = nil
+        recordingState.droppedFrames = 0
+        recordingState.encodedFrames = 0
+        recordingState.outputResolution = nil
+        recordingState.syncStatus = "Clean camera file output"
         movieOutput.startRecording(to: url, recordingDelegate: delegate)
         startRecordingTimer()
     }
 
     func stopRecording() {
+        if activeRecordingMode == .processedMaster {
+            processedRecorder.stop()
+            return
+        }
         guard movieOutput.isRecording else { return }
         movieOutput.stopRecording()
     }
 
     func setPreviewFillMode(_ mode: PreviewFillMode) {
         previewFillMode = mode
+    }
+
+    func updatePreviewOrientation(_ orientation: PreviewOrientation) {
+        currentPreviewOrientation = orientation
     }
 
     func setZoom(_ factor: CGFloat, ramp: Bool = true) {
@@ -803,17 +857,64 @@ final class CameraSessionManager: ObservableObject {
         }
     }
 
+    private func startProcessedRecording() {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let filename = "ProCamLinkStudio-Processed-\(Self.recordingTimestamp()).mov"
+        let url = directory.appendingPathComponent(filename)
+        let source = activeSourceDimensions()
+        recordingStartedAt = Date()
+        activeRecordingMode = .processedMaster
+        recordingState.isRecording = true
+        recordingState.elapsedSeconds = 0
+        recordingState.lastRecordingPath = nil
+        recordingState.droppedFrames = 0
+        recordingState.encodedFrames = 0
+        recordingState.outputResolution = nil
+        recordingState.syncStatus = "Processed frames encoded from capture timestamps"
+        processedRecorder.start(
+            url: url,
+            codec: selectedRecordingCodec,
+            quality: selectedRecordingQuality,
+            sourceWidth: source.width,
+            sourceHeight: source.height
+        )
+        startRecordingTimer()
+    }
+
+    private func activeSourceDimensions() -> (width: Int, height: Int) {
+        guard let activeDevice else { return (1920, 1080) }
+        let dimensions = CMVideoFormatDescriptionGetDimensions(activeDevice.activeFormat.formatDescription)
+        return (Int(dimensions.width), Int(dimensions.height))
+    }
+
+    private func currentFrameProcessingState(includeMonitoring: Bool) -> FrameProcessingState {
+        FrameProcessingState(
+            orientation: currentPreviewOrientation,
+            adjustments: imageAdjustments,
+            framing: smartFraming,
+            tracking: trackingState,
+            horizon: horizonState,
+            stabilization: stabilizationSettings,
+            monitoring: monitoringState,
+            includeMonitoring: includeMonitoring
+        )
+    }
+
     private func finishRecording(url: URL?, error: Error?) {
         recordingTimer?.invalidate()
         recordingTimer = nil
         recordingState.isRecording = false
         recordingState.elapsedSeconds = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         recordingStartedAt = nil
+        activeRecordingMode = nil
 
         if let error {
             lastError = error.localizedDescription
+            recordingState.syncStatus = "Recording failed"
         } else {
             recordingState.lastRecordingPath = url?.path
+            recordingState.syncStatus = "Saved"
             lastError = nil
         }
     }

@@ -395,17 +395,39 @@ private struct VideoControlPanel: View {
             HStack {
                 Badge(title: "HDR", value: cameraSession.capabilities.supportsHDR ? "Supported" : "Unavailable")
                 Badge(title: "Color", value: cameraSession.capabilities.supportsHDR ? "SDR/HDR" : "Rec.709")
-                Badge(title: "Rec", value: cameraSession.selectedRecordingCodec.rawValue)
+                Badge(title: "Rec", value: cameraSession.selectedRecordingMode.rawValue)
                 Badge(title: "Timer", value: recordingTime)
             }
 
             HStack(spacing: 8) {
+                ForEach(RecordingMode.allCases) { mode in
+                    Button(mode.rawValue) {
+                        cameraSession.setRecordingMode(mode)
+                    }
+                    .buttonStyle(SegmentButtonStyle(isActive: cameraSession.selectedRecordingMode == mode))
+                    .disabled(cameraSession.recordingState.isRecording)
+                }
+
                 ForEach(cameraSession.availableRecordingCodecs) { codec in
                     Button(codec.rawValue) {
                         cameraSession.setRecordingCodec(codec)
                     }
                     .buttonStyle(SegmentButtonStyle(isActive: cameraSession.selectedRecordingCodec == codec))
+                    .disabled(cameraSession.recordingState.isRecording)
                 }
+            }
+
+            HStack(spacing: 8) {
+                ForEach(RecordingQualityPreset.allCases) { quality in
+                    Button(quality.rawValue) {
+                        cameraSession.setRecordingQuality(quality)
+                    }
+                    .buttonStyle(SegmentButtonStyle(isActive: cameraSession.selectedRecordingQuality == quality))
+                    .disabled(cameraSession.recordingState.isRecording)
+                }
+            }
+
+            HStack(spacing: 8) {
                 if let warning = cameraSession.recordingState.storageWarning {
                     Text(warning)
                         .font(.caption.weight(.semibold))
@@ -417,6 +439,20 @@ private struct VideoControlPanel: View {
                         .foregroundStyle(.white.opacity(0.65))
                         .lineLimit(1)
                 }
+            }
+
+            HStack {
+                Badge(title: "Quality", value: cameraSession.selectedRecordingQuality.rawValue)
+                Badge(title: "Output", value: cameraSession.recordingState.outputResolution ?? "Pending")
+                Badge(title: "Frames", value: "\(cameraSession.recordingState.encodedFrames)")
+                Badge(title: "Dropped", value: "\(cameraSession.recordingState.droppedFrames)")
+            }
+
+            if let sync = cameraSession.recordingState.syncStatus {
+                Text(sync)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(1)
             }
         }
     }

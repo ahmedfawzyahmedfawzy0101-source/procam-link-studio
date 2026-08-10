@@ -42,6 +42,7 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
         view.delegate = context.coordinator
 
         context.coordinator.attach(to: view)
+        cameraSession.updatePreviewOrientation(view.previewOrientation)
         context.coordinator.update(
             fillMode: cameraSession.previewFillMode,
             orientation: view.previewOrientation,
@@ -62,6 +63,7 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: MTKView, context: Context) {
+        cameraSession.updatePreviewOrientation(uiView.previewOrientation)
         context.coordinator.update(
             fillMode: cameraSession.previewFillMode,
             orientation: uiView.previewOrientation,
