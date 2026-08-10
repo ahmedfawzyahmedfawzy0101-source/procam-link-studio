@@ -49,7 +49,8 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
             framing: cameraSession.smartFraming,
             tracking: cameraSession.trackingState,
             horizon: cameraSession.horizonState,
-            stabilization: cameraSession.stabilizationSettings
+            stabilization: cameraSession.stabilizationSettings,
+            monitoring: cameraSession.monitoringState
         )
         context.coordinator.tapHandler = tapHandler
         cameraSession.setFrameConsumer(context.coordinator)
@@ -68,7 +69,8 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
             framing: cameraSession.smartFraming,
             tracking: cameraSession.trackingState,
             horizon: cameraSession.horizonState,
-            stabilization: cameraSession.stabilizationSettings
+            stabilization: cameraSession.stabilizationSettings,
+            monitoring: cameraSession.monitoringState
         )
         context.coordinator.tapHandler = tapHandler
         cameraSession.setFrameConsumer(context.coordinator)
@@ -89,6 +91,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
     private var tracking = TrackingState()
     private var horizon = HorizonState()
     private var stabilization = StabilizationSettings()
+    private var monitoring = MonitoringState()
     private var smoothedCrop = CGRect(x: 0, y: 0, width: 1, height: 1)
     private var smoothedCorrectionDegrees = 0.0
     private let stateQueue = DispatchQueue(label: "studio.procamlink.preview.renderer")
@@ -109,7 +112,8 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
         framing: SmartFramingSettings,
         tracking: TrackingState,
         horizon: HorizonState,
-        stabilization: StabilizationSettings
+        stabilization: StabilizationSettings,
+        monitoring: MonitoringState
     ) {
         stateQueue.async {
             self.fillMode = fillMode
@@ -119,6 +123,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             self.tracking = tracking
             self.horizon = horizon
             self.stabilization = stabilization
+            self.monitoring = monitoring
         }
     }
 
@@ -142,7 +147,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             return
         }
 
-        let snapshot = stateQueue.sync { (latestPixelBuffer, fillMode, orientation, adjustments, framing, tracking, horizon, stabilization) }
+        let snapshot = stateQueue.sync { (latestPixelBuffer, fillMode, orientation, adjustments, framing, tracking, horizon, stabilization, monitoring) }
         guard let pixelBuffer = snapshot.0 else {
             return
         }
@@ -153,6 +158,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             image = applySmartFraming(snapshot.4, tracking: snapshot.5, to: image)
             image = applyStabilization(snapshot.7, horizon: snapshot.6, to: image)
             image = apply(adjustments: snapshot.3, to: image)
+            image = applyMonitoring(snapshot.8, to: image)
             image = image.transformedForDisplay(in: view.drawableSize, fillMode: snapshot.1)
 
             ciContext.render(
@@ -340,6 +346,54 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
         return rotated.cropped(to: source.insetBy(dx: insetX, dy: insetY))
     }
 
+    private func applyMonitoring(_ monitoring: MonitoringState, to image: CIImage) -> CIImage {
+        var output = image
+
+        if monitoring.falseColor {
+            let falseColor = output.applyingFilter("CIFalseColor", parameters: [
+                "inputColor0": CIColor(red: 0.05, green: 0.1, blue: 0.8),
+                "inputColor1": CIColor(red: 1.0, green: 0.15, blue: 0.05)
+            ])
+            output = falseColor
+                .applyingFilter("CIColorMatrix", parameters: [
+                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: monitoring.falseColorOpacity)
+                ])
+                .composited(over: output)
+        }
+
+        if monitoring.focusPeaking {
+            let edges = output
+                .applyingFilter("CIEdges", parameters: [kCIInputIntensityKey: 6 * monitoring.focusPeakingSensitivity])
+                .applyingFilter("CIColorMatrix", parameters: [
+                    "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                    "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+                    "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: monitoring.focusPeakingOpacity)
+                ])
+            output = edges.composited(over: output)
+        }
+
+        if monitoring.zebras {
+            output = applyZebras(monitoring, to: output)
+        }
+
+        return output
+    }
+
+    private func applyZebras(_ monitoring: MonitoringState, to image: CIImage) -> CIImage {
+        guard let threshold = CIFilter(name: "CIColorThreshold") else { return image }
+        threshold.setValue(image, forKey: kCIInputImageKey)
+        threshold.setValue(monitoring.zebraHighThreshold, forKey: "inputThreshold")
+        guard let mask = threshold.outputImage else { return image }
+
+        let stripes = CIImage.stripes(extent: image.extent)
+        let zebra = stripes.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: image,
+            kCIInputMaskImageKey: mask
+        ])
+        return zebra
+    }
+
     private func adjustedSaturation(_ adjustments: ImageAdjustmentState) -> Double {
         adjustments.saturation + lookDelta(adjustments.look, intensity: adjustments.lookIntensity).saturation
     }
@@ -409,6 +463,22 @@ private extension UIView {
 }
 
 private extension CIImage {
+    static func stripes(extent: CGRect) -> CIImage {
+        let stripe = CIFilter(
+            name: "CIStripesGenerator",
+            parameters: [
+                "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: 0.85),
+                "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 0.0),
+                "inputWidth": 8,
+                "inputSharpness": 1
+            ]
+        )?.outputImage ?? CIImage(color: CIColor(red: 1, green: 1, blue: 1))
+
+        return stripe
+            .transformed(by: CGAffineTransform(rotationAngle: .pi / 4))
+            .cropped(to: extent)
+    }
+
     func transformedForDisplay(in drawableSize: CGSize, fillMode: PreviewFillMode) -> CIImage {
         let target = CGRect(origin: .zero, size: drawableSize)
         guard extent.width > 0, extent.height > 0, target.width > 0, target.height > 0 else {

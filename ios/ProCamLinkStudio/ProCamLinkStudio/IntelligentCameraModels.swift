@@ -138,3 +138,13 @@ struct PerformanceBudgetState: Equatable {
     var totalFrameBudgetMS: Double { targetFPS >= 50 ? 16.7 : 33.3 }
     var warning: String?
 }
+
+struct MonitoringAnalysisState: Equatable {
+    var lumaHistogram: [Double] = Array(repeating: 0, count: 32)
+    var redHistogram: [Double] = Array(repeating: 0, count: 32)
+    var greenHistogram: [Double] = Array(repeating: 0, count: 32)
+    var blueHistogram: [Double] = Array(repeating: 0, count: 32)
+    var clippingPercent: Double = 0
+    var shadowsPercent: Double = 0
+    var analysisMS: Double = 0
+}

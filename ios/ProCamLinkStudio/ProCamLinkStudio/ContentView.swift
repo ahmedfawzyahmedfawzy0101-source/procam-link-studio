@@ -40,6 +40,7 @@ struct ContentView: View {
                             focusPoint: cameraSession.focusState.focusPoint,
                             tracking: cameraSession.trackingState,
                             horizon: cameraSession.horizonState,
+                            analysis: cameraSession.monitoringAnalysis,
                             geometry: geometry
                         )
 
@@ -613,7 +614,27 @@ private struct MonitoringControlPanel: View {
             ToggleRow(title: "Grid", isOn: $cameraSession.monitoringState.grid)
             ToggleRow(title: "Center", isOn: $cameraSession.monitoringState.centerMarker)
             ToggleRow(title: "Thermal", isOn: $cameraSession.monitoringState.showThermal)
+            ToggleRow(title: "Histogram", isOn: $cameraSession.monitoringState.histogram)
+            ToggleRow(title: "RGB Hist", isOn: $cameraSession.monitoringState.rgbHistogram)
+            ToggleRow(title: "False Color", isOn: $cameraSession.monitoringState.falseColor)
+            SliderRow(title: "FC Op", value: monitoringBinding(\.falseColorOpacity), range: 0...1, display: String(format: "%.0f%%", cameraSession.monitoringState.falseColorOpacity * 100))
+            ToggleRow(title: "Peaking", isOn: $cameraSession.monitoringState.focusPeaking)
+            SliderRow(title: "Peak", value: monitoringBinding(\.focusPeakingSensitivity), range: 0.1...1, display: String(format: "%.2f", cameraSession.monitoringState.focusPeakingSensitivity))
+            ToggleRow(title: "Zebras", isOn: $cameraSession.monitoringState.zebras)
+
+            HStack {
+                Badge(title: "Clip", value: String(format: "%.1f%%", cameraSession.monitoringAnalysis.clippingPercent * 100))
+                Badge(title: "Shadows", value: String(format: "%.1f%%", cameraSession.monitoringAnalysis.shadowsPercent * 100))
+                Badge(title: "Scope", value: String(format: "%.1f ms", cameraSession.monitoringAnalysis.analysisMS))
+            }
         }
+    }
+
+    private func monitoringBinding(_ keyPath: WritableKeyPath<MonitoringState, Double>) -> Binding<Double> {
+        Binding(
+            get: { cameraSession.monitoringState[keyPath: keyPath] },
+            set: { cameraSession.monitoringState[keyPath: keyPath] = $0 }
+        )
     }
 }
 
@@ -669,6 +690,7 @@ private struct MonitoringOverlay: View {
     let focusPoint: CGPoint?
     let tracking: TrackingState
     let horizon: HorizonState
+    let analysis: MonitoringAnalysisState
     let geometry: GeometryProxy
 
     var body: some View {
@@ -702,6 +724,17 @@ private struct MonitoringOverlay: View {
                     .stroke(abs(horizon.rollDegrees) > 2 ? .yellow : .green, lineWidth: 1.5)
                     .frame(width: 150, height: 28)
                     .rotationEffect(.degrees(horizon.rollDegrees))
+            }
+
+            if monitoring.histogram || monitoring.rgbHistogram {
+                HistogramOverlay(
+                    luma: analysis.lumaHistogram,
+                    red: monitoring.rgbHistogram ? analysis.redHistogram : [],
+                    green: monitoring.rgbHistogram ? analysis.greenHistogram : [],
+                    blue: monitoring.rgbHistogram ? analysis.blueHistogram : []
+                )
+                .frame(width: 150, height: 70)
+                .position(x: 90, y: 118)
             }
 
             VStack {
@@ -862,6 +895,54 @@ private struct HorizonOverlay: Shape {
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
         path.move(to: CGPoint(x: rect.midX, y: rect.midY - 10))
         path.addLine(to: CGPoint(x: rect.midX, y: rect.midY + 10))
+        return path
+    }
+}
+
+private struct HistogramOverlay: View {
+    let luma: [Double]
+    let red: [Double]
+    let green: [Double]
+    let blue: [Double]
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(.black.opacity(0.52))
+            HistogramPath(values: luma)
+                .stroke(.white, lineWidth: 1)
+                .padding(6)
+            if !red.isEmpty {
+                HistogramPath(values: red)
+                    .stroke(.red.opacity(0.72), lineWidth: 1)
+                    .padding(6)
+                HistogramPath(values: green)
+                    .stroke(.green.opacity(0.72), lineWidth: 1)
+                    .padding(6)
+                HistogramPath(values: blue)
+                    .stroke(.blue.opacity(0.72), lineWidth: 1)
+                    .padding(6)
+            }
+        }
+    }
+}
+
+private struct HistogramPath: Shape {
+    let values: [Double]
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard values.count > 1 else { return path }
+        let step = rect.width / CGFloat(values.count - 1)
+        for index in values.indices {
+            let x = rect.minX + CGFloat(index) * step
+            let y = rect.maxY - rect.height * CGFloat(min(max(values[index], 0), 1))
+            if index == values.startIndex {
+                path.move(to: CGPoint(x: x, y: y))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
         return path
     }
 }

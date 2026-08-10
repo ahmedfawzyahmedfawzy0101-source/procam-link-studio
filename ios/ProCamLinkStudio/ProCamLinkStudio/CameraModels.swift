@@ -270,6 +270,16 @@ struct MonitoringState: Equatable {
     var grid = true
     var centerMarker = true
     var showThermal = true
+    var histogram = false
+    var rgbHistogram = false
+    var falseColor = false
+    var falseColorOpacity = 0.65
+    var zebras = false
+    var zebraLowThreshold = 0.7
+    var zebraHighThreshold = 0.95
+    var focusPeaking = false
+    var focusPeakingSensitivity = 0.55
+    var focusPeakingOpacity = 0.75
 }
 
 enum LookPreset: String, CaseIterable, Identifiable, Codable {

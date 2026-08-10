@@ -48,11 +48,11 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Grid / center marker | IMPLEMENTED + SOFTWARE PROCESSING | Preview only. |
-| Focus peaking | NOT IMPLEMENTED | Required before final v1.0. |
-| Histogram / RGB histogram | NOT IMPLEMENTED | Required before final v1.0. |
+| Histogram / RGB histogram | IMPLEMENTED + SOFTWARE PROCESSING | Reduced-rate sampled luma and YCbCr-derived RGB histograms. |
 | Waveform / RGB parade / vectorscope | NOT IMPLEMENTED | Required before final v1.0. |
-| False color with legend | NOT IMPLEMENTED | Required before final v1.0. |
-| Zebras | NOT IMPLEMENTED | Required before final v1.0. |
+| False color with legend | IMPLEMENTED + SOFTWARE PROCESSING | Preview false color is implemented; visible scale/legend still required. |
+| Zebras | IMPLEMENTED + SOFTWARE PROCESSING | Preview zebra overlay uses threshold mask and stripe composition. Dual thresholds UI still needs refinement. |
+| Focus peaking | IMPLEMENTED + SOFTWARE PROCESSING | Preview peaking uses Core Image edge detection with sensitivity/opacity controls. |
 
 ## Capture / Recording / Audio
 

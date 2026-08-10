@@ -26,6 +26,7 @@ final class CameraSessionManager: ObservableObject {
     @Published var performanceBudget = PerformanceBudgetState()
     @Published private(set) var trackingState = TrackingState()
     @Published private(set) var horizonState = HorizonState()
+    @Published private(set) var monitoringAnalysis = MonitoringAnalysisState()
     @Published private(set) var nativeStabilization = NativeStabilizationState()
     @Published var selectedRecordingCodec: RecordingCodec = .hevc
     @Published private(set) var availableRecordingCodecs: [RecordingCodec] = [.h264]
@@ -44,6 +45,7 @@ final class CameraSessionManager: ObservableObject {
     private var recordingStartedAt: Date?
     private var recordingTimer: Timer?
     private let intelligentCamera = IntelligentCameraManager()
+    private let monitoringAnalyzer = MonitoringAnalyzer()
     private var activeDevice: AVCaptureDevice?
     private var thermalObserver: NSObjectProtocol?
     private var lastSmartMeteringUpdate = Date.distantPast
@@ -63,6 +65,9 @@ final class CameraSessionManager: ObservableObject {
         }
         intelligentCamera.onPerformanceUpdated = { [weak self] state in
             Task { @MainActor in self?.performanceBudget = state }
+        }
+        monitoringAnalyzer.onAnalysisUpdated = { [weak self] state in
+            Task { @MainActor in self?.monitoringAnalysis = state }
         }
         intelligentCamera.startMotion()
         thermalObserver = NotificationCenter.default.addObserver(
@@ -172,6 +177,7 @@ final class CameraSessionManager: ObservableObject {
         sampleBufferProxy.previewConsumer = consumer
         sampleBufferProxy.analysisHandler = { [weak self] pixelBuffer, timestamp in
             self?.intelligentCamera.analyze(pixelBuffer: pixelBuffer, timestamp: timestamp)
+            self?.monitoringAnalyzer.analyze(pixelBuffer: pixelBuffer)
         }
         videoOutput.setSampleBufferDelegate(sampleBufferProxy, queue: videoOutputQueue)
     }

@@ -143,9 +143,21 @@ Implemented in this milestone:
 - Performance budget callback for tracking analysis time and frame-budget warning.
 - Throttled smart AF/AE metering toward the selected subject when manual focus/exposure are not active.
 
+## Milestone 8 Scope
+
+Implemented in this milestone:
+
+- Reduced-rate monitoring analyzer for luma and YCbCr-derived RGB histograms.
+- Clipping and shadow percentage diagnostics from sampled pixel buffers.
+- Preview histogram overlay.
+- Preview RGB histogram overlay.
+- Preview false-color processing using Core Image.
+- Preview focus peaking using Core Image edge detection.
+- Preview zebra overlay path using Core Image threshold/mask/stripe composition.
+- Monitoring analysis timing surfaced in the UI.
+
 Not claimed complete in this milestone:
 
-- Histogram/RGB histogram/waveform/zebras/focus peaking rendering.
 - Local recording.
 - Streaming transports.
 - Windows receiver.
