@@ -13,7 +13,7 @@ namespace procam {
 
 namespace {
 
-constexpr size_t kReceiveBufferSize = 1316;
+constexpr size_t kReceiveBufferSize = 64 * 1024;
 
 std::wstring WidenUtf8(const std::string& value) {
     if (value.empty()) {

@@ -25,7 +25,7 @@ struct SrtReceiverConfiguration {
     std::wstring host = L"0.0.0.0";
     uint16_t port = 9000;
     int latencyMs = 120;
-    int timeoutMs = 1000;
+    int timeoutMs = 5000;
     std::wstring passphrase;
     std::wstring streamId;
     bool reconnect = true;

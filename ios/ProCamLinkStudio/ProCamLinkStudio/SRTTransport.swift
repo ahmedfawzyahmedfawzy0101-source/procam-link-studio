@@ -5,6 +5,7 @@ final class SRTTransport {
     var onStatistics: ((SRTStatistics) -> Void)?
 
     private let queue = DispatchQueue(label: "studio.procamlink.srt.transport")
+    private let maxSRTPayloadBytes = 1_316
     private let maxQueuedPackets = 240
     private var sendQueue: [(data: Data, presentationTime: TimeInterval)] = []
     private var isSending = false
@@ -57,11 +58,16 @@ final class SRTTransport {
     func send(_ data: Data, presentationTime: TimeInterval) {
         queue.async {
             guard self.handle != nil else { return }
-            if self.sendQueue.count >= self.maxQueuedPackets {
-                self.sendQueue.removeFirst()
-                self.droppedQueuePackets += 1
+            var offset = 0
+            while offset < data.count {
+                let end = min(offset + self.maxSRTPayloadBytes, data.count)
+                if self.sendQueue.count >= self.maxQueuedPackets {
+                    self.sendQueue.removeFirst()
+                    self.droppedQueuePackets += 1
+                }
+                self.sendQueue.append((data.subdata(in: offset..<end), presentationTime))
+                offset = end
             }
-            self.sendQueue.append((data, presentationTime))
             self.drainSendQueueLocked()
         }
     }
