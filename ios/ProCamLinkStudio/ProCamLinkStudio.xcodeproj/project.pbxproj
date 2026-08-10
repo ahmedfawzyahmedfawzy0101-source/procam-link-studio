@@ -342,6 +342,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+				);
 				PROCAM_BUNDLE_IDENTIFIER = com.procamlink.studio;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PROCAM_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -375,6 +379,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+				);
 				PROCAM_BUNDLE_IDENTIFIER = com.procamlink.studio;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PROCAM_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
