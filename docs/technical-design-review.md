@@ -194,6 +194,10 @@ Phase 1 creates only the iOS app and this design document.
 - Background and foreground the app and confirm preview resumes.
 - Deny camera permission from Settings and confirm the app shows a permission message instead of crashing.
 
+## Updated Development Strategy
+
+The Phase 1 app has already been installed and launched on a real iPhone through Sideloadly. Future development should not require repeated iPhone installs. Use GitHub Actions CI compile checks after internal milestones and reserve IPA creation for the final v1.0 release gate.
+
 ## Sources
 
 - Apple AVFoundation capture formats documentation: https://developer.apple.com/documentation/avfoundation/capture-device-formats

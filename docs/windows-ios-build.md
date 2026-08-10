@@ -2,6 +2,8 @@
 
 This project is designed so you can develop on Windows, push to GitHub, let GitHub Actions build on macOS, download an IPA, then use Sideloadly on Windows to sign and install it on your own iPhone.
 
+Current strategy: do not build or install intermediate IPAs. Use CI compile checks during development and run the IPA workflow only for the final v1.0 release gate.
+
 ## What Gets Built
 
 - App: `ProCamLinkStudio`

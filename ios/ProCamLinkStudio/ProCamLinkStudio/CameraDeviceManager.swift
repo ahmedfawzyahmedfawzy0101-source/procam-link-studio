@@ -6,6 +6,27 @@ struct CameraDevice: Identifiable {
 
     var id: String { device.uniqueID }
 
+    var zoomBadge: String {
+        switch device.deviceType {
+        case .builtInUltraWideCamera:
+            return "0.5x"
+        case .builtInWideAngleCamera:
+            return device.position == .front ? "Front" : "1x"
+        case .builtInTelephotoCamera:
+            return telephotoBadge
+        case .builtInTripleCamera:
+            return "Multi"
+        case .builtInDualWideCamera:
+            return "Dual"
+        case .builtInDualCamera:
+            return "Dual"
+        case .builtInTrueDepthCamera:
+            return "TrueDepth"
+        default:
+            return device.localizedName
+        }
+    }
+
     var displayName: String {
         switch device.deviceType {
         case .builtInUltraWideCamera:
@@ -25,6 +46,17 @@ struct CameraDevice: Identifiable {
         default:
             return device.localizedName
         }
+    }
+
+    private var telephotoBadge: String {
+        let fov = device.activeFormat.videoFieldOfView
+        if fov > 0 && fov < 25 {
+            return "5x"
+        }
+        if fov > 0 && fov < 40 {
+            return "3x"
+        }
+        return "2x"
     }
 }
 

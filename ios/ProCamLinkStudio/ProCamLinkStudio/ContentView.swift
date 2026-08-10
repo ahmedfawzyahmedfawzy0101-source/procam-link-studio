@@ -5,46 +5,68 @@ struct ContentView: View {
     @StateObject private var cameraSession = CameraSessionManager()
     @StateObject private var deviceManager = CameraDeviceManager()
 
+    @State private var selectedPanel: StudioPanel = .camera
+    @State private var basePinchZoom: CGFloat = 1
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             switch cameraSession.authorizationStatus {
             case .authorized:
-                CameraPreviewView(session: cameraSession.session)
-                    .ignoresSafeArea()
-                    .overlay(alignment: .top) {
-                        topBar
+                GeometryReader { geometry in
+                    ZStack {
+                        CameraPreviewView(
+                            session: cameraSession.session,
+                            fillMode: cameraSession.previewFillMode,
+                            tapHandler: cameraSession.focusAndExpose(at:)
+                        )
+                        .ignoresSafeArea()
+                        .gesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    cameraSession.setZoom(basePinchZoom * value, ramp: false)
+                                }
+                                .onEnded { _ in
+                                    basePinchZoom = cameraSession.zoomFactor
+                                }
+                        )
+
+                        MonitoringOverlay(
+                            monitoring: cameraSession.monitoringState,
+                            thermal: cameraSession.thermalState,
+                            focusPoint: cameraSession.focusState.focusPoint,
+                            geometry: geometry
+                        )
+
+                        VStack(spacing: 0) {
+                            TopTelemetryBar(cameraSession: cameraSession)
+                            Spacer()
+                            LensStrip(
+                                devices: deviceManager.devices,
+                                activeDeviceID: cameraSession.activeDeviceID,
+                                select: { device in
+                                    Task { await cameraSession.configure(device: device) }
+                                }
+                            )
+                            ControlDock(
+                                selectedPanel: $selectedPanel,
+                                cameraSession: cameraSession
+                            )
+                        }
                     }
-                    .overlay(alignment: .bottom) {
-                        cameraPicker
-                    }
-                    .task {
-                        await configureFirstAvailableCamera()
-                    }
+                }
+                .task {
+                    await configureFirstAvailableCamera()
+                }
 
             case .notDetermined:
-                VStack(spacing: 16) {
-                    Text("ProCam Link Studio")
-                        .font(.title.bold())
-                    Button("Allow Camera Access") {
-                        Task { await cameraSession.requestCameraAccess() }
-                    }
-                    .buttonStyle(.borderedProminent)
+                PermissionView {
+                    Task { await cameraSession.requestCameraAccess() }
                 }
-                .foregroundStyle(.white)
-                .padding()
 
             default:
-                VStack(spacing: 12) {
-                    Text("Camera access is required")
-                        .font(.title2.bold())
-                    Text("Enable camera permission in Settings to use the iPhone preview.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                }
-                .foregroundStyle(.white)
-                .padding()
+                PermissionDeniedView()
             }
         }
         .onAppear {
@@ -56,49 +78,530 @@ struct ContentView: View {
         }
     }
 
-    private var topBar: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("ProCam Link Studio")
-                    .font(.headline)
-                Text(cameraSession.activeDeviceName ?? "No camera selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .foregroundStyle(.white)
-        .padding()
-        .background(.black.opacity(0.45))
-    }
-
-    private var cameraPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(deviceManager.devices) { camera in
-                    Button {
-                        Task { await cameraSession.configure(device: camera.device) }
-                    } label: {
-                        Text(camera.displayName)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .padding(.horizontal, 12)
-                            .frame(height: 38)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(camera.device.uniqueID == cameraSession.activeDeviceID ? .blue : .gray)
-                }
-            }
-            .padding()
-        }
-        .background(.black.opacity(0.45))
-    }
-
     private func configureFirstAvailableCamera() async {
         guard cameraSession.activeDeviceID == nil, let firstDevice = deviceManager.devices.first?.device else {
             return
         }
         await cameraSession.configure(device: firstDevice)
+        basePinchZoom = cameraSession.zoomFactor
+    }
+}
+
+private struct PermissionView: View {
+    let requestAccess: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("ProCam Link Studio")
+                .font(.title2.weight(.semibold))
+            Button("Allow Camera") {
+                requestAccess()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .foregroundStyle(.white)
+        .padding()
+    }
+}
+
+private struct PermissionDeniedView: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("Camera access required")
+                .font(.title3.weight(.semibold))
+            Text("Enable camera permission in iOS Settings.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .foregroundStyle(.white)
+        .multilineTextAlignment(.center)
+        .padding()
+    }
+}
+
+private struct TopTelemetryBar: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(cameraSession.activeDeviceName ?? "No Camera")
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(1)
+                Text(statusLine)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button(cameraSession.previewFillMode.rawValue) {
+                cameraSession.setPreviewFillMode(cameraSession.previewFillMode == .fill ? .fit : .fill)
+            }
+            .buttonStyle(CompactButtonStyle())
+
+            if cameraSession.capabilities.hasTorch {
+                Button("Torch") {
+                    cameraSession.toggleTorch()
+                }
+                .buttonStyle(CompactButtonStyle())
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.black.opacity(0.42))
+    }
+
+    private var statusLine: String {
+        let iso = Int(cameraSession.exposureState.iso.rounded())
+        let shutter = shutterLabel(seconds: cameraSession.exposureState.shutterSeconds)
+        let ev = String(format: "%+.1fEV", cameraSession.exposureState.exposureBias)
+        let zoom = String(format: "%.1fx", cameraSession.zoomFactor)
+        return "\(zoom)  ISO \(iso)  \(shutter)  \(ev)"
+    }
+}
+
+private struct LensStrip: View {
+    let devices: [CameraDevice]
+    let activeDeviceID: String?
+    let select: (AVCaptureDevice) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(devices) { camera in
+                    Button {
+                        select(camera.device)
+                    } label: {
+                        VStack(spacing: 1) {
+                            Text(camera.zoomBadge)
+                                .font(.footnote.weight(.bold))
+                            Text(camera.device.position == .front ? "Front" : "Optical")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
+                        .frame(width: 68, height: 42)
+                    }
+                    .buttonStyle(LensButtonStyle(isActive: camera.id == activeDeviceID))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+        }
+        .background(.black.opacity(0.34))
+    }
+}
+
+private struct ControlDock: View {
+    @Binding var selectedPanel: StudioPanel
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                ForEach(StudioPanel.allCases) { panel in
+                    Button(panel.rawValue) {
+                        selectedPanel = panel
+                    }
+                    .buttonStyle(SegmentButtonStyle(isActive: selectedPanel == panel))
+                }
+            }
+
+            switch selectedPanel {
+            case .camera:
+                CameraControlPanel(cameraSession: cameraSession)
+            case .video:
+                VideoControlPanel(cameraSession: cameraSession)
+            case .monitoring:
+                MonitoringControlPanel(cameraSession: cameraSession)
+            case .app:
+                AppControlPanel(cameraSession: cameraSession)
+            }
+        }
+        .padding(10)
+        .background(.black.opacity(0.62))
+    }
+}
+
+private struct CameraControlPanel: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        VStack(spacing: 12) {
+            SliderRow(
+                title: "Zoom",
+                value: Binding(
+                    get: { Double(cameraSession.zoomFactor) },
+                    set: { cameraSession.setZoom(CGFloat($0), ramp: true) }
+                ),
+                range: Double(cameraSession.capabilities.minZoom)...Double(cameraSession.capabilities.maxZoom),
+                display: String(format: "%.1fx", cameraSession.zoomFactor)
+            )
+
+            if cameraSession.capabilities.hasTorch {
+                SliderRow(
+                    title: "Torch",
+                    value: Binding(
+                        get: { Double(cameraSession.torchLevel) },
+                        set: { cameraSession.setTorch(enabled: true, level: Float($0)) }
+                    ),
+                    range: 0.01...1,
+                    display: "\(Int(cameraSession.torchLevel * 100))%"
+                )
+            }
+
+            PickerRow(title: "Exposure", selection: Binding(
+                get: { cameraSession.exposureState.mode },
+                set: { cameraSession.setExposureMode($0) }
+            ))
+
+            if cameraSession.capabilities.supportsManualExposure {
+                SliderRow(
+                    title: "ISO",
+                    value: Binding(
+                        get: { Double(cameraSession.exposureState.iso) },
+                        set: { cameraSession.setManualExposure(iso: Float($0)) }
+                    ),
+                    range: Double(cameraSession.capabilities.minISO)...Double(cameraSession.capabilities.maxISO),
+                    display: "\(Int(cameraSession.exposureState.iso.rounded()))"
+                )
+
+                SliderRow(
+                    title: "Shutter",
+                    value: Binding(
+                        get: { cameraSession.exposureState.shutterSeconds },
+                        set: { cameraSession.setManualExposure(shutterSeconds: $0) }
+                    ),
+                    range: cameraSession.capabilities.minExposureSeconds...cameraSession.capabilities.maxExposureSeconds,
+                    display: shutterLabel(seconds: cameraSession.exposureState.shutterSeconds)
+                )
+            }
+
+            if cameraSession.capabilities.supportsExposureBias {
+                SliderRow(
+                    title: "EV",
+                    value: Binding(
+                        get: { Double(cameraSession.exposureState.exposureBias) },
+                        set: { cameraSession.setExposureBias(Float($0)) }
+                    ),
+                    range: Double(cameraSession.capabilities.minExposureBias)...Double(cameraSession.capabilities.maxExposureBias),
+                    display: String(format: "%+.1f", cameraSession.exposureState.exposureBias)
+                )
+            }
+
+            PickerRow(title: "Focus", selection: Binding(
+                get: { cameraSession.focusState.mode },
+                set: { cameraSession.setFocusMode($0) }
+            ))
+
+            if cameraSession.capabilities.supportsManualFocus {
+                SliderRow(
+                    title: "Lens",
+                    value: Binding(
+                        get: { Double(cameraSession.focusState.lensPosition) },
+                        set: { cameraSession.setManualFocus(Float($0)) }
+                    ),
+                    range: 0...1,
+                    display: String(format: "%.2f", cameraSession.focusState.lensPosition)
+                )
+            }
+
+            PickerRow(title: "WB", selection: Binding(
+                get: { cameraSession.whiteBalanceState.mode },
+                set: { cameraSession.setWhiteBalanceMode($0) }
+            ))
+
+            if cameraSession.capabilities.supportsManualWhiteBalance {
+                HStack(spacing: 6) {
+                    ForEach([3200, 4300, 5600, 6500], id: \.self) { kelvin in
+                        Button("\(kelvin)K") {
+                            cameraSession.setManualWhiteBalance(temperature: Float(kelvin))
+                        }
+                        .buttonStyle(CompactButtonStyle())
+                    }
+                }
+
+                SliderRow(
+                    title: "Kelvin",
+                    value: Binding(
+                        get: { Double(cameraSession.whiteBalanceState.temperature) },
+                        set: { cameraSession.setManualWhiteBalance(temperature: Float($0)) }
+                    ),
+                    range: 2_000...10_000,
+                    display: "\(Int(cameraSession.whiteBalanceState.temperature))K"
+                )
+
+                SliderRow(
+                    title: "Tint",
+                    value: Binding(
+                        get: { Double(cameraSession.whiteBalanceState.tint) },
+                        set: { cameraSession.setManualWhiteBalance(tint: Float($0)) }
+                    ),
+                    range: -150...150,
+                    display: String(format: "%+.0f", cameraSession.whiteBalanceState.tint)
+                )
+            }
+        }
+    }
+}
+
+private struct VideoControlPanel: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if cameraSession.formats.isEmpty {
+                Text("No selectable video formats reported by this camera.")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.72))
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(cameraSession.formats.prefix(14)) { format in
+                            Button(format.label) {
+                                let targetFPS = min(format.maxFPS, format.maxFPS >= 60 ? 60 : 30)
+                                cameraSession.apply(format: format, fps: targetFPS)
+                            }
+                            .buttonStyle(SegmentButtonStyle(isActive: format.id == cameraSession.selectedFormatID))
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Badge(title: "HDR", value: cameraSession.capabilities.supportsHDR ? "Supported" : "Unavailable")
+                Badge(title: "Color", value: cameraSession.capabilities.supportsHDR ? "SDR/HDR" : "Rec.709")
+            }
+        }
+    }
+}
+
+private struct MonitoringControlPanel: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ToggleRow(title: "Grid", isOn: $cameraSession.monitoringState.grid)
+            ToggleRow(title: "Center", isOn: $cameraSession.monitoringState.centerMarker)
+            ToggleRow(title: "Thermal", isOn: $cameraSession.monitoringState.showThermal)
+        }
+    }
+}
+
+private struct AppControlPanel: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        HStack {
+            Badge(title: "Thermal", value: cameraSession.thermalState.title)
+            Badge(title: "Preview", value: cameraSession.previewFillMode.rawValue)
+            if let error = cameraSession.lastError {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+        }
+    }
+}
+
+private struct MonitoringOverlay: View {
+    let monitoring: MonitoringState
+    let thermal: ThermalStateLabel
+    let focusPoint: CGPoint?
+    let geometry: GeometryProxy
+
+    var body: some View {
+        ZStack {
+            if monitoring.grid {
+                GridOverlay()
+                    .stroke(.white.opacity(0.28), lineWidth: 0.7)
+            }
+
+            if monitoring.centerMarker {
+                CenterMarker()
+                    .stroke(.white.opacity(0.72), lineWidth: 1)
+                    .frame(width: 34, height: 34)
+            }
+
+            if let focusPoint {
+                FocusReticle()
+                    .stroke(.yellow, lineWidth: 1.6)
+                    .frame(width: 70, height: 70)
+                    .position(x: focusPoint.x * geometry.size.width, y: focusPoint.y * geometry.size.height)
+            }
+
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    if monitoring.showThermal {
+                        Text(thermal.title)
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background((thermal.isRisky ? Color.red : Color.black).opacity(0.55))
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(.trailing, 12)
+                .padding(.bottom, 188)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct SliderRow: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let display: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .frame(width: 58, alignment: .leading)
+            Slider(value: $value, in: range)
+            Text(display)
+                .font(.caption.monospacedDigit())
+                .frame(width: 66, alignment: .trailing)
+        }
+        .foregroundStyle(.white)
+    }
+}
+
+private struct PickerRow<Value>: View where Value: CaseIterable & Hashable & Identifiable & RawRepresentable, Value.RawValue == String {
+    let title: String
+    @Binding var selection: Value
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .frame(width: 58, alignment: .leading)
+            ForEach(Array(Value.allCases), id: \.self) { value in
+                Button(value.rawValue) {
+                    selection = value
+                }
+                .buttonStyle(SegmentButtonStyle(isActive: selection == value))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct ToggleRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(title, isOn: $isOn)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .toggleStyle(.switch)
+    }
+}
+
+private struct Badge: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.58))
+            Text(value)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.white.opacity(0.11))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+private struct GridOverlay: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for fraction in [1.0 / 3.0, 2.0 / 3.0] {
+            let x = rect.width * fraction
+            path.move(to: CGPoint(x: x, y: rect.minY))
+            path.addLine(to: CGPoint(x: x, y: rect.maxY))
+
+            let y = rect.height * fraction
+            path.move(to: CGPoint(x: rect.minX, y: y))
+            path.addLine(to: CGPoint(x: rect.maxX, y: y))
+        }
+        return path
+    }
+}
+
+private struct CenterMarker: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.minY + 10))
+        path.move(to: CGPoint(x: rect.midX, y: rect.maxY - 10))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.minX + 10, y: rect.midY))
+        path.move(to: CGPoint(x: rect.maxX - 10, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        return path
+    }
+}
+
+private struct FocusReticle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: 6, height: 6))
+        return path
+    }
+}
+
+private struct CompactButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(.white.opacity(configuration.isPressed ? 0.24 : 0.14))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+private struct SegmentButtonStyle: ButtonStyle {
+    let isActive: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .frame(height: 30)
+            .background(isActive ? Color.blue.opacity(0.82) : Color.white.opacity(configuration.isPressed ? 0.2 : 0.11))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+private struct LensButtonStyle: ButtonStyle {
+    let isActive: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .background(isActive ? Color.blue.opacity(0.86) : Color.black.opacity(configuration.isPressed ? 0.65 : 0.46))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.white.opacity(isActive ? 0.55 : 0.16), lineWidth: 1)
+            }
     }
 }
