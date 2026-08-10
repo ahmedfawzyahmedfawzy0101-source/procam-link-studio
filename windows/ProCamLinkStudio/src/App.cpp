@@ -194,7 +194,8 @@ void App::DrawPreview(HDC hdc, const RECT& rect) {
     FillRectColor(hdc, preview, RGB(7, 9, 12));
     SetTextColor(hdc, RGB(146, 156, 168));
     const auto state = receiver_.StateSnapshot();
-    DrawTextLine(hdc, state.streamActive ? L"Receiving live stream" : state.status, preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    RECT message{preview.left + 36, preview.top + 36, preview.right - 36, preview.bottom - 36};
+    DrawTextLine(hdc, state.streamActive ? L"Receiving live stream" : state.status, message, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
     SetTextColor(hdc, RGB(236, 240, 244));
 }
 

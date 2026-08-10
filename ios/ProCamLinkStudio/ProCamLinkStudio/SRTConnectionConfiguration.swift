@@ -18,7 +18,7 @@ enum SRTConnectionState: Equatable {
 
 struct SRTConnectionConfiguration: Equatable, Codable {
     var mode: SRTConnectionMode = .caller
-    var host: String = "127.0.0.1"
+    var host: String = "192.168.1.7"
     var port: UInt16 = 9000
     var latencyMS: Int = 120
     var passphrase: String = ""

@@ -123,42 +123,7 @@ private struct CameraHUD: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cameraSession.activeDeviceName ?? "Camera")
-                        .font(.footnote.weight(.semibold))
-                        .lineLimit(1)
-                    Text(statusLine)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                Button("Stream") {
-                    cameraSession.toggleStreaming()
-                }
-                .buttonStyle(RecordButtonStyle(isRecording: cameraSession.streamingStatus.isStreaming))
-
-                Button(cameraSession.recordingState.isRecording ? "Stop" : "Rec") {
-                    cameraSession.toggleRecording()
-                }
-                .buttonStyle(RecordButtonStyle(isRecording: cameraSession.recordingState.isRecording))
-
-                Button {
-                    openSettings()
-                } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 34, height: 30)
-                }
-                .buttonStyle(IconPillButtonStyle())
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 8)
-            .background(.black.opacity(0.34))
+            TopTelemetryBar(cameraSession: cameraSession, openSettings: openSettings)
 
             Spacer()
 
@@ -170,12 +135,6 @@ private struct CameraHUD: View {
             .padding(.bottom, 6)
         }
         .foregroundStyle(.white)
-    }
-
-    private var statusLine: String {
-        let zoom = String(format: "%.1fx", cameraSession.zoomFactor)
-        let stream = cameraSession.streamingStatus.isStreaming ? "SRT On" : "SRT Off"
-        return "\(zoom)  \(stream)"
     }
 }
 
@@ -231,6 +190,7 @@ private struct PermissionDeniedView: View {
 
 private struct TopTelemetryBar: View {
     @ObservedObject var cameraSession: CameraSessionManager
+    let openSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -246,22 +206,38 @@ private struct TopTelemetryBar: View {
 
             Spacer()
 
-            Button(cameraSession.previewFillMode.rawValue) {
-                cameraSession.setPreviewFillMode(cameraSession.previewFillMode == .fill ? .fit : .fill)
-            }
-            .buttonStyle(CompactButtonStyle())
-
-            if cameraSession.capabilities.hasTorch {
-                Button("Torch") {
-                    cameraSession.toggleTorch()
+            HStack(spacing: 7) {
+                Button(cameraSession.previewFillMode.rawValue) {
+                    cameraSession.setPreviewFillMode(cameraSession.previewFillMode == .fill ? .fit : .fill)
                 }
                 .buttonStyle(CompactButtonStyle())
-            }
 
-            Button(cameraSession.recordingState.isRecording ? "Stop" : "Rec") {
-                cameraSession.toggleRecording()
+                if cameraSession.capabilities.hasTorch {
+                    Button("Torch") {
+                        cameraSession.toggleTorch()
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                }
+
+                Button(cameraSession.streamingStatus.isStreaming ? "Stop SRT" : "Stream") {
+                    cameraSession.toggleStreaming()
+                }
+                .buttonStyle(RecordButtonStyle(isRecording: cameraSession.streamingStatus.isStreaming))
+
+                Button(cameraSession.recordingState.isRecording ? "Stop" : "Rec") {
+                    cameraSession.toggleRecording()
+                }
+                .buttonStyle(RecordButtonStyle(isRecording: cameraSession.recordingState.isRecording))
+
+                Button {
+                    openSettings()
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 34, height: 30)
+                }
+                .buttonStyle(IconPillButtonStyle())
             }
-            .buttonStyle(RecordButtonStyle(isRecording: cameraSession.recordingState.isRecording))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 12)

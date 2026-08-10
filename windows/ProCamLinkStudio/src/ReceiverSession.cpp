@@ -1,11 +1,13 @@
 #include "ReceiverSession.h"
 
+#include <iphlpapi.h>
 #include <srt/srt.h>
 #include <ws2tcpip.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cwctype>
 #include <filesystem>
-#include <set>
 #include <sstream>
 #include <vector>
 
@@ -29,37 +31,138 @@ std::wstring LastSrtError() {
     return WidenUtf8(srt_getlasterror_str());
 }
 
+bool IsUsableLanIPv4(const std::string& address) {
+    if (address.rfind("127.", 0) == 0 || address.rfind("169.254.", 0) == 0 || address == "0.0.0.0") {
+        return false;
+    }
+    return address.rfind("192.168.", 0) == 0 ||
+        address.rfind("10.", 0) == 0 ||
+        (address.rfind("172.", 0) == 0 && [&address] {
+            const auto secondDot = address.find('.', 4);
+            if (secondDot == std::string::npos) {
+                return false;
+            }
+            const int secondOctet = std::stoi(address.substr(4, secondDot - 4));
+            return secondOctet >= 16 && secondOctet <= 31;
+        }());
+}
+
+int AdapterScore(const IP_ADAPTER_ADDRESSES& adapter, const std::string& address) {
+    int score = 0;
+    if (address.rfind("192.168.", 0) == 0) {
+        score += 120;
+    } else if (address.rfind("10.", 0) == 0) {
+        score += 100;
+    } else if (address.rfind("172.", 0) == 0) {
+        score += 80;
+    }
+
+    if (adapter.IfType == IF_TYPE_IEEE80211 || adapter.IfType == IF_TYPE_ETHERNET_CSMACD) {
+        score += 100;
+    }
+
+    std::wstring name = adapter.FriendlyName ? adapter.FriendlyName : L"";
+    std::transform(name.begin(), name.end(), name.begin(), [](wchar_t ch) { return static_cast<wchar_t>(towlower(ch)); });
+    if (name.find(L"wi-fi") != std::wstring::npos || name.find(L"wifi") != std::wstring::npos ||
+        name.find(L"ethernet") != std::wstring::npos) {
+        score += 60;
+    }
+    if (name.find(L"vethernet") != std::wstring::npos || name.find(L"virtual") != std::wstring::npos ||
+        name.find(L"vmware") != std::wstring::npos || name.find(L"hyper-v") != std::wstring::npos ||
+        name.find(L"loopback") != std::wstring::npos || name.find(L"bluetooth") != std::wstring::npos) {
+        score -= 300;
+    }
+
+    return score;
+}
+
 std::wstring LocalSrtEndpoint(uint16_t port) {
-    char hostname[256]{};
-    if (gethostname(hostname, sizeof(hostname)) != 0) {
-        return L"srt://<this-pc-ip>:" + std::to_wstring(port);
+    ULONG bufferSize = 15 * 1024;
+    std::vector<uint8_t> buffer(bufferSize);
+    auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG result = GetAdaptersAddresses(
+        AF_INET,
+        GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+        nullptr,
+        adapters,
+        &bufferSize
+    );
+    if (result == ERROR_BUFFER_OVERFLOW) {
+        buffer.resize(bufferSize);
+        adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+        result = GetAdaptersAddresses(
+            AF_INET,
+            GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+            nullptr,
+            adapters,
+            &bufferSize
+        );
+    }
+    if (result != NO_ERROR) {
+        return L"<your-wi-fi-ip>:" + std::to_wstring(port);
     }
 
-    addrinfo hints{};
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-    addrinfo* results = nullptr;
-    if (getaddrinfo(hostname, nullptr, &hints, &results) != 0 || !results) {
-        return L"srt://<this-pc-ip>:" + std::to_wstring(port);
-    }
-
-    std::set<std::wstring> addresses;
-    for (addrinfo* item = results; item != nullptr; item = item->ai_next) {
-        auto* ipv4 = reinterpret_cast<sockaddr_in*>(item->ai_addr);
-        char text[INET_ADDRSTRLEN]{};
-        if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text))) {
-            std::string address(text);
-            if (address.rfind("127.", 0) != 0) {
-                addresses.insert(WidenUtf8(address));
+    int bestScore = -10000;
+    std::wstring bestAddress;
+    for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next) {
+        if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK || adapter->IfType == IF_TYPE_TUNNEL) {
+            continue;
+        }
+        for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next) {
+            if (!unicast->Address.lpSockaddr || unicast->Address.lpSockaddr->sa_family != AF_INET) {
+                continue;
+            }
+            const auto* ipv4 = reinterpret_cast<const sockaddr_in*>(unicast->Address.lpSockaddr);
+            char text[INET_ADDRSTRLEN]{};
+            if (!inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text))) {
+                continue;
+            }
+            const std::string address(text);
+            if (!IsUsableLanIPv4(address)) {
+                continue;
+            }
+            const int score = AdapterScore(*adapter, address);
+            if (score > bestScore) {
+                bestScore = score;
+                bestAddress = WidenUtf8(address);
             }
         }
     }
-    freeaddrinfo(results);
 
-    if (addresses.empty()) {
-        return L"srt://<this-pc-ip>:" + std::to_wstring(port);
+    if (bestAddress.empty()) {
+        char hostname[256]{};
+        if (gethostname(hostname, sizeof(hostname)) != 0) {
+            return L"<your-wi-fi-ip>:" + std::to_wstring(port);
+        }
+        addrinfo hints{};
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_DGRAM;
+        addrinfo* results = nullptr;
+        if (getaddrinfo(hostname, nullptr, &hints, &results) != 0 || !results) {
+            return L"<your-wi-fi-ip>:" + std::to_wstring(port);
+        }
+        for (addrinfo* item = results; item != nullptr; item = item->ai_next) {
+            auto* ipv4 = reinterpret_cast<sockaddr_in*>(item->ai_addr);
+            char text[INET_ADDRSTRLEN]{};
+            if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text))) {
+                std::string address(text);
+                if (IsUsableLanIPv4(address)) {
+                    bestAddress = WidenUtf8(address);
+                    break;
+                }
+            }
+        }
+        freeaddrinfo(results);
     }
-    return L"srt://" + *addresses.begin() + L":" + std::to_wstring(port);
+
+    if (bestAddress.empty()) {
+        return L"<your-wi-fi-ip>:" + std::to_wstring(port);
+    }
+    return bestAddress + L":" + std::to_wstring(port);
+}
+
+std::wstring SrtInstruction(uint16_t port) {
+    return L"Listening. Set iPhone Stream host to " + LocalSrtEndpoint(port);
 }
 
 } // namespace
@@ -105,7 +208,7 @@ HRESULT ReceiverSession::Initialize() {
     }
 
     mediaFoundationStarted_ = true;
-    state_.status = L"Ready. iPhone Stream host: " + LocalSrtEndpoint(9000);
+    state_.status = L"Ready. " + SrtInstruction(9000);
     state_.connection = ConnectionState::Disconnected;
     return S_OK;
 }
@@ -386,7 +489,7 @@ int ReceiverSession::OpenListenerSocket(const SrtReceiverConfiguration& configur
         return SRT_INVALID_SOCK;
     }
 
-    SetStatus(ConnectionState::Connecting, L"Listening. Set iPhone Stream host to " + LocalSrtEndpoint(configuration.port));
+    SetStatus(ConnectionState::Connecting, SrtInstruction(configuration.port));
 
     {
         std::scoped_lock socketLock(socketMutex_);
