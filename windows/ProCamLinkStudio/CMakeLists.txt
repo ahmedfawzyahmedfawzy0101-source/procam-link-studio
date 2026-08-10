@@ -35,7 +35,6 @@ target_link_libraries(ProCamLinkStudio PRIVATE
     mfreadwrite
     d3d11
     dxgi
-    iphlpapi
     ws2_32
 )
 

@@ -1,12 +1,10 @@
 #include "ReceiverSession.h"
 
-#include <iphlpapi.h>
 #include <srt/srt.h>
 #include <ws2tcpip.h>
 
 #include <algorithm>
 #include <chrono>
-#include <cwctype>
 #include <filesystem>
 #include <sstream>
 #include <vector>
@@ -47,118 +45,53 @@ bool IsUsableLanIPv4(const std::string& address) {
         }());
 }
 
-int AdapterScore(const IP_ADAPTER_ADDRESSES& adapter, const std::string& address) {
-    int score = 0;
+int LanAddressScore(const std::string& address) {
     if (address.rfind("192.168.", 0) == 0) {
-        score += 120;
-    } else if (address.rfind("10.", 0) == 0) {
-        score += 100;
-    } else if (address.rfind("172.", 0) == 0) {
-        score += 80;
+        return 300;
     }
-
-    if (adapter.IfType == IF_TYPE_IEEE80211 || adapter.IfType == IF_TYPE_ETHERNET_CSMACD) {
-        score += 100;
+    if (address.rfind("10.", 0) == 0) {
+        return 200;
     }
-
-    std::wstring name = adapter.FriendlyName ? adapter.FriendlyName : L"";
-    std::transform(name.begin(), name.end(), name.begin(), [](wchar_t ch) { return static_cast<wchar_t>(towlower(ch)); });
-    if (name.find(L"wi-fi") != std::wstring::npos || name.find(L"wifi") != std::wstring::npos ||
-        name.find(L"ethernet") != std::wstring::npos) {
-        score += 60;
+    if (address.rfind("172.", 0) == 0) {
+        return 100;
     }
-    if (name.find(L"vethernet") != std::wstring::npos || name.find(L"virtual") != std::wstring::npos ||
-        name.find(L"vmware") != std::wstring::npos || name.find(L"hyper-v") != std::wstring::npos ||
-        name.find(L"loopback") != std::wstring::npos || name.find(L"bluetooth") != std::wstring::npos) {
-        score -= 300;
-    }
-
-    return score;
+    return 0;
 }
 
 std::wstring LocalSrtEndpoint(uint16_t port) {
-    ULONG bufferSize = 15 * 1024;
-    std::vector<uint8_t> buffer(bufferSize);
-    auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
-    ULONG result = GetAdaptersAddresses(
-        AF_INET,
-        GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
-        nullptr,
-        adapters,
-        &bufferSize
-    );
-    if (result == ERROR_BUFFER_OVERFLOW) {
-        buffer.resize(bufferSize);
-        adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
-        result = GetAdaptersAddresses(
-            AF_INET,
-            GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
-            nullptr,
-            adapters,
-            &bufferSize
-        );
-    }
-    if (result != NO_ERROR) {
+    char hostname[256]{};
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
         return L"<your-wi-fi-ip>:" + std::to_wstring(port);
     }
 
-    int bestScore = -10000;
-    std::wstring bestAddress;
-    for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next) {
-        if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK || adapter->IfType == IF_TYPE_TUNNEL) {
-            continue;
-        }
-        for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next) {
-            if (!unicast->Address.lpSockaddr || unicast->Address.lpSockaddr->sa_family != AF_INET) {
-                continue;
-            }
-            const auto* ipv4 = reinterpret_cast<const sockaddr_in*>(unicast->Address.lpSockaddr);
-            char text[INET_ADDRSTRLEN]{};
-            if (!inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text))) {
-                continue;
-            }
-            const std::string address(text);
-            if (!IsUsableLanIPv4(address)) {
-                continue;
-            }
-            const int score = AdapterScore(*adapter, address);
-            if (score > bestScore) {
-                bestScore = score;
-                bestAddress = WidenUtf8(address);
-            }
-        }
-    }
-
-    if (bestAddress.empty()) {
-        char hostname[256]{};
-        if (gethostname(hostname, sizeof(hostname)) != 0) {
-            return L"<your-wi-fi-ip>:" + std::to_wstring(port);
-        }
-        addrinfo hints{};
-        hints.ai_family = AF_INET;
-        hints.ai_socktype = SOCK_DGRAM;
-        addrinfo* results = nullptr;
-        if (getaddrinfo(hostname, nullptr, &hints, &results) != 0 || !results) {
-            return L"<your-wi-fi-ip>:" + std::to_wstring(port);
-        }
-        for (addrinfo* item = results; item != nullptr; item = item->ai_next) {
-            auto* ipv4 = reinterpret_cast<sockaddr_in*>(item->ai_addr);
-            char text[INET_ADDRSTRLEN]{};
-            if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text))) {
-                std::string address(text);
-                if (IsUsableLanIPv4(address)) {
-                    bestAddress = WidenUtf8(address);
-                    break;
-                }
-            }
-        }
-        freeaddrinfo(results);
-    }
-
-    if (bestAddress.empty()) {
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    addrinfo* results = nullptr;
+    if (getaddrinfo(hostname, nullptr, &hints, &results) != 0 || !results) {
         return L"<your-wi-fi-ip>:" + std::to_wstring(port);
     }
-    return bestAddress + L":" + std::to_wstring(port);
+
+    std::vector<std::string> addresses;
+    for (addrinfo* item = results; item != nullptr; item = item->ai_next) {
+        auto* ipv4 = reinterpret_cast<sockaddr_in*>(item->ai_addr);
+        char text[INET_ADDRSTRLEN]{};
+        if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text))) {
+            std::string address(text);
+            if (IsUsableLanIPv4(address)) {
+                addresses.push_back(address);
+            }
+        }
+    }
+    freeaddrinfo(results);
+
+    if (addresses.empty()) {
+        return L"<your-wi-fi-ip>:" + std::to_wstring(port);
+    }
+    std::sort(addresses.begin(), addresses.end(), [](const std::string& lhs, const std::string& rhs) {
+        return LanAddressScore(lhs) > LanAddressScore(rhs);
+    });
+    return WidenUtf8(addresses.front()) + L":" + std::to_wstring(port);
 }
 
 std::wstring SrtInstruction(uint16_t port) {
