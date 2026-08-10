@@ -78,6 +78,7 @@ struct ContentView: View {
         .onAppear {
             deviceManager.refreshDevices()
             cameraSession.refreshAuthorizationStatus()
+            cameraSession.refreshAudioAuthorizationStatus()
         }
         .onDisappear {
             cameraSession.stop()
@@ -399,6 +400,14 @@ private struct VideoControlPanel: View {
                 Badge(title: "Timer", value: recordingTime)
             }
 
+            ToggleRow(
+                title: "Audio",
+                isOn: Binding(
+                    get: { cameraSession.audioMeter.isEnabled },
+                    set: { cameraSession.setAudioEnabled($0) }
+                )
+            )
+
             HStack(spacing: 8) {
                 ForEach(RecordingMode.allCases) { mode in
                     Button(mode.rawValue) {
@@ -448,6 +457,13 @@ private struct VideoControlPanel: View {
                 Badge(title: "Dropped", value: "\(cameraSession.recordingState.droppedFrames)")
             }
 
+            HStack {
+                Badge(title: "Mic", value: cameraSession.audioMeter.isAuthorized ? "Ready" : "No Access")
+                Badge(title: "Level", value: cameraSession.audioMeter.levelLabel)
+                Badge(title: "Peak", value: "\(Int((cameraSession.audioMeter.peakLevel * 100).rounded()))%")
+                Badge(title: "Sync", value: syncOffsetLabel)
+            }
+
             if let sync = cameraSession.recordingState.syncStatus {
                 Text(sync)
                     .font(.caption2)
@@ -460,6 +476,11 @@ private struct VideoControlPanel: View {
     private var recordingTime: String {
         let seconds = Int(cameraSession.recordingState.elapsedSeconds.rounded())
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private var syncOffsetLabel: String {
+        guard let offset = cameraSession.audioMeter.syncOffsetMS else { return "-" }
+        return String(format: "%+.1fms", offset)
     }
 }
 

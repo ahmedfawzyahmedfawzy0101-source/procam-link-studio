@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import CoreImage
 import CoreMedia
@@ -21,6 +22,7 @@ final class ProcessedMasterRecorder {
     private let ciContext = CIContext()
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
+    private var audioInput: AVAssetWriterInput?
     private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
     private var outputURL: URL?
     private var startTime: CMTime?
@@ -31,7 +33,14 @@ final class ProcessedMasterRecorder {
         queue.sync { writer != nil }
     }
 
-    func start(url: URL, codec: RecordingCodec, quality: RecordingQualityPreset, sourceWidth: Int, sourceHeight: Int) {
+    func start(
+        url: URL,
+        codec: RecordingCodec,
+        quality: RecordingQualityPreset,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        includeAudio: Bool
+    ) {
         queue.async {
             guard self.writer == nil else { return }
             do {
@@ -54,6 +63,21 @@ final class ProcessedMasterRecorder {
                     throw ProcessedRecordingError.unsupportedWriterInput
                 }
                 writer.add(input)
+
+                if includeAudio {
+                    let audioSettings: [String: Any] = [
+                        AVFormatIDKey: kAudioFormatMPEG4AAC,
+                        AVNumberOfChannelsKey: 2,
+                        AVSampleRateKey: 48_000,
+                        AVEncoderBitRateKey: 128_000
+                    ]
+                    let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+                    audioInput.expectsMediaDataInRealTime = true
+                    if writer.canAdd(audioInput) {
+                        writer.add(audioInput)
+                        self.audioInput = audioInput
+                    }
+                }
 
                 let attributes: [String: Any] = [
                     kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
@@ -151,6 +175,19 @@ final class ProcessedMasterRecorder {
         }
     }
 
+    func appendAudio(sampleBuffer: CMSampleBuffer) {
+        queue.async {
+            guard let writer = self.writer,
+                  let audioInput = self.audioInput,
+                  writer.status == .writing else {
+                return
+            }
+
+            guard audioInput.isReadyForMoreMediaData else { return }
+            _ = audioInput.append(sampleBuffer)
+        }
+    }
+
     func stop() {
         queue.async {
             self.finishWithCurrentWriter(error: nil)
@@ -164,6 +201,7 @@ final class ProcessedMasterRecorder {
         videoInput?.markAsFinished()
         self.writer = nil
         videoInput = nil
+        audioInput = nil
         pixelBufferAdaptor = nil
         outputURL = nil
         startTime = nil

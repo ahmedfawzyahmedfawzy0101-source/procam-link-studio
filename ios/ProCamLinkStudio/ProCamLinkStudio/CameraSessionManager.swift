@@ -30,6 +30,7 @@ final class CameraSessionManager: ObservableObject {
     @Published private(set) var horizonState = HorizonState()
     @Published private(set) var monitoringAnalysis = MonitoringAnalysisState()
     @Published private(set) var nativeStabilization = NativeStabilizationState()
+    @Published var audioMeter = AudioMeterState()
     @Published var selectedRecordingCodec: RecordingCodec = .hevc
     @Published var selectedRecordingMode: RecordingMode = .cleanMaster
     @Published var selectedRecordingQuality: RecordingQualityPreset = .matchCamera
@@ -41,9 +42,13 @@ final class CameraSessionManager: ObservableObject {
 
     private let sessionQueue = DispatchQueue(label: "studio.procamlink.camera.session")
     private let videoOutputQueue = DispatchQueue(label: "studio.procamlink.camera.video-output")
+    private let audioOutputQueue = DispatchQueue(label: "studio.procamlink.camera.audio-output")
     private var currentInput: AVCaptureDeviceInput?
+    private var currentAudioInput: AVCaptureDeviceInput?
     private let videoOutput = AVCaptureVideoDataOutput()
+    private let audioOutput = AVCaptureAudioDataOutput()
     private let sampleBufferProxy = CameraSampleBufferProxy()
+    private let audioSampleBufferProxy = AudioSampleBufferProxy()
     private let movieOutput = AVCaptureMovieFileOutput()
     private let processedRecorder = ProcessedMasterRecorder()
     private var recordingDelegate: MovieRecordingDelegate?
@@ -89,6 +94,11 @@ final class CameraSessionManager: ObservableObject {
                 self?.finishRecording(url: outputURL, error: error)
             }
         }
+        audioSampleBufferProxy.sampleHandler = { [weak self] sampleBuffer in
+            guard let self else { return }
+            self.handleAudioSampleBuffer(sampleBuffer)
+        }
+        audioOutput.setSampleBufferDelegate(audioSampleBufferProxy, queue: audioOutputQueue)
         intelligentCamera.startMotion()
         thermalObserver = NotificationCenter.default.addObserver(
             forName: ProcessInfo.thermalStateDidChangeNotification,
@@ -119,17 +129,41 @@ final class CameraSessionManager: ObservableObject {
         authorizationStatus = granted ? .authorized : AVCaptureDevice.authorizationStatus(for: .video)
     }
 
+    func refreshAudioAuthorizationStatus() {
+        audioMeter.isAuthorized = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    func setAudioEnabled(_ enabled: Bool) {
+        guard !recordingState.isRecording else { return }
+        audioMeter.isEnabled = enabled
+        if let activeDevice {
+            Task { await configure(device: activeDevice) }
+        }
+    }
+
     func configure(device: AVCaptureDevice) async {
         guard authorizationStatus == .authorized else {
             return
         }
 
+        if audioMeter.isEnabled && AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            _ = await withCheckedContinuation { continuation in
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+        }
+        refreshAudioAuthorizationStatus()
+
         let videoOutput = videoOutput
+        let audioOutput = audioOutput
         let movieOutput = movieOutput
+        let audioAllowed = audioMeter.isEnabled && audioMeter.isAuthorized
         let result = await withCheckedContinuation { continuation in
-            sessionQueue.async { [session, currentInput] in
+            sessionQueue.async { [session, currentInput, currentAudioInput] in
                 do {
                     let input = try AVCaptureDeviceInput(device: device)
+                    var configuredAudioInput: AVCaptureDeviceInput?
 
                     session.beginConfiguration()
                     session.sessionPreset = .high
@@ -140,11 +174,22 @@ final class CameraSessionManager: ObservableObject {
 
                     guard session.canAddInput(input) else {
                         session.commitConfiguration()
-                        continuation.resume(returning: Result<AVCaptureDeviceInput, Error>.failure(CameraSessionError.unsupportedInput))
+                        continuation.resume(returning: Result<(AVCaptureDeviceInput, AVCaptureDeviceInput?), Error>.failure(CameraSessionError.unsupportedInput))
                         return
                     }
 
                     session.addInput(input)
+
+                    if let currentAudioInput, session.inputs.contains(currentAudioInput) {
+                        session.removeInput(currentAudioInput)
+                    }
+                    if audioAllowed, let microphone = AVCaptureDevice.default(for: .audio) {
+                        let microphoneInput = try AVCaptureDeviceInput(device: microphone)
+                        if session.canAddInput(microphoneInput) {
+                            session.addInput(microphoneInput)
+                            configuredAudioInput = microphoneInput
+                        }
+                    }
 
                     if !session.outputs.contains(videoOutput) {
                         videoOutput.alwaysDiscardsLateVideoFrames = true
@@ -156,6 +201,12 @@ final class CameraSessionManager: ObservableObject {
                         }
                     }
 
+                    if audioAllowed, !session.outputs.contains(audioOutput), session.canAddOutput(audioOutput) {
+                        session.addOutput(audioOutput)
+                    } else if !audioAllowed, session.outputs.contains(audioOutput) {
+                        session.removeOutput(audioOutput)
+                    }
+
                     if !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) {
                         session.addOutput(movieOutput)
                     }
@@ -165,7 +216,7 @@ final class CameraSessionManager: ObservableObject {
                         session.startRunning()
                     }
 
-                    continuation.resume(returning: .success(input))
+                    continuation.resume(returning: .success((input, configuredAudioInput)))
                 } catch {
                     continuation.resume(returning: .failure(error))
                 }
@@ -173,8 +224,9 @@ final class CameraSessionManager: ObservableObject {
         }
 
         switch result {
-        case .success(let input):
+        case .success(let (input, audioInput)):
             currentInput = input
+            currentAudioInput = audioInput
             activeDevice = device
             activeDeviceID = device.uniqueID
             activeDeviceName = device.localizedName
@@ -199,6 +251,10 @@ final class CameraSessionManager: ObservableObject {
             guard let self else { return }
             self.intelligentCamera.analyze(pixelBuffer: pixelBuffer, timestamp: timestamp)
             self.monitoringAnalyzer.analyze(pixelBuffer: pixelBuffer)
+            Task { @MainActor in
+                self.audioMeter.lastVideoTimestamp = timestamp
+                self.updateSyncStatus()
+            }
             if self.activeRecordingMode == .processedMaster {
                 self.processedRecorder.append(
                     pixelBuffer: pixelBuffer,
@@ -877,7 +933,8 @@ final class CameraSessionManager: ObservableObject {
             codec: selectedRecordingCodec,
             quality: selectedRecordingQuality,
             sourceWidth: source.width,
-            sourceHeight: source.height
+            sourceHeight: source.height,
+            includeAudio: audioMeter.isEnabled && audioMeter.isAuthorized
         )
         startRecordingTimer()
     }
@@ -899,6 +956,55 @@ final class CameraSessionManager: ObservableObject {
             monitoring: monitoringState,
             includeMonitoring: includeMonitoring
         )
+    }
+
+    private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        guard audioMeter.isEnabled else { return }
+        let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let levels = Self.audioLevels(from: sampleBuffer)
+        Task { @MainActor in
+            self.audioMeter.lastAudioTimestamp = timestamp
+            if let levels {
+                self.audioMeter.rmsLevel = levels.rms
+                self.audioMeter.peakLevel = levels.peak
+            }
+            self.updateSyncStatus()
+        }
+
+        if activeRecordingMode == .processedMaster {
+            processedRecorder.appendAudio(sampleBuffer: sampleBuffer)
+        }
+    }
+
+    private func updateSyncStatus() {
+        guard recordingState.isRecording, let offset = audioMeter.syncOffsetMS else { return }
+        recordingState.syncStatus = String(format: "A/V sync %+0.1f ms", offset)
+    }
+
+    private static func audioLevels(from sampleBuffer: CMSampleBuffer) -> (rms: Double, peak: Double)? {
+        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return nil }
+        let length = CMBlockBufferGetDataLength(blockBuffer)
+        guard length >= MemoryLayout<Int16>.size else { return nil }
+
+        var data = Data(count: length)
+        let status = data.withUnsafeMutableBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return kCMBlockBufferBadPointerParameterErr }
+            return CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length, destination: baseAddress)
+        }
+        guard status == noErr else { return nil }
+
+        return data.withUnsafeBytes { rawBuffer in
+            let samples = rawBuffer.bindMemory(to: Int16.self)
+            guard !samples.isEmpty else { return nil }
+            var sum = 0.0
+            var peak = 0.0
+            for sample in samples {
+                let normalized = Double(sample) / Double(Int16.max)
+                sum += normalized * normalized
+                peak = max(peak, abs(normalized))
+            }
+            return (min(1, sqrt(sum / Double(samples.count))), min(1, peak))
+        }
     }
 
     private func finishRecording(url: URL?, error: Error?) {
@@ -996,6 +1102,18 @@ private final class MovieRecordingDelegate: NSObject, AVCaptureFileOutputRecordi
         error: Error?
     ) {
         finishHandler(outputFileURL, error)
+    }
+}
+
+private final class AudioSampleBufferProxy: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    var sampleHandler: ((CMSampleBuffer) -> Void)?
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        sampleHandler?(sampleBuffer)
     }
 }
 

@@ -383,6 +383,24 @@ struct RecordingState: Equatable {
     var syncStatus: String?
 }
 
+struct AudioMeterState: Equatable {
+    var isEnabled = true
+    var isAuthorized = false
+    var rmsLevel: Double = 0
+    var peakLevel: Double = 0
+    var lastAudioTimestamp: CMTime?
+    var lastVideoTimestamp: CMTime?
+
+    var syncOffsetMS: Double? {
+        guard let lastAudioTimestamp, let lastVideoTimestamp else { return nil }
+        return (CMTimeGetSeconds(lastAudioTimestamp) - CMTimeGetSeconds(lastVideoTimestamp)) * 1000
+    }
+
+    var levelLabel: String {
+        "\(Int((rmsLevel * 100).rounded()))%"
+    }
+}
+
 struct CameraProfile: Identifiable, Equatable, Codable {
     enum FormatGoal: String, Codable {
         case maxQuality
