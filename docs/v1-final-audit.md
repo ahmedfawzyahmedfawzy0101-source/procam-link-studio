@@ -74,7 +74,8 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| SRT transport | NOT IMPLEMENTED | Requires linking Haivision `libsrt.xcframework` and `libcrypto.xcframework`; no fake UDP transport is claimed. |
+| SRT transport API/linking | IMPLEMENTED + SOFTWARE PROCESSING | iOS CI builds Haivision SRT/OpenSSL XCFrameworks and `SRTTransport` calls libsrt through a C bridge. |
+| End-to-end iPhone SRT streaming | NOT IMPLEMENTED | Live encoder-to-MPEG-TS-to-SRT wiring is still required before claiming OBS Direct. |
 | Clean stream path | NOT IMPLEMENTED | Requires transport sender wiring. |
 | Processed stream path | NOT IMPLEMENTED | Requires transport sender wiring from the shared processed frame pipeline and VideoToolbox encoder. |
 | MPEG-TS muxing foundation | IMPLEMENTED + SOFTWARE PROCESSING | PAT/PMT/PES/TS packetization exists for H.264/HEVC/AAC, but live encoder/audio wiring and OBS validation remain. |

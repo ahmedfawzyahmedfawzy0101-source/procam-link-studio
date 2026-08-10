@@ -9,7 +9,6 @@ enum SRTConnectionMode: String, CaseIterable, Identifiable, Codable {
 
 enum SRTConnectionState: Equatable {
     case disconnected
-    case waitingForDependency(String)
     case connecting
     case connected(Date)
     case reconnecting(Int)

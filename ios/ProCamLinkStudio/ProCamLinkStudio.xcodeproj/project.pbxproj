@@ -24,6 +24,9 @@
 		6A10001F2C69210000100101 /* SRTStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000102C69210000100101 /* SRTStatistics.swift */; };
 		6A1000212C69210000100101 /* SRTTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000222C69210000100101 /* SRTTransport.swift */; };
 		6A1000232C69210000100101 /* MPEGTransportStreamMuxer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000242C69210000100101 /* MPEGTransportStreamMuxer.swift */; };
+		6A1000252C69210000100101 /* SRTBridge.c in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000262C69210000100101 /* SRTBridge.c */; };
+		6A1000272C69210000100101 /* libsrt.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A1000282C69210000100101 /* libsrt.xcframework */; };
+		6A1000292C69210000100101 /* libcrypto.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A10002A2C69210000100101 /* libcrypto.xcframework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +48,11 @@
 		6A1000102C69210000100101 /* SRTStatistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SRTStatistics.swift; sourceTree = "<group>"; };
 		6A1000222C69210000100101 /* SRTTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SRTTransport.swift; sourceTree = "<group>"; };
 		6A1000242C69210000100101 /* MPEGTransportStreamMuxer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MPEGTransportStreamMuxer.swift; sourceTree = "<group>"; };
+		6A1000262C69210000100101 /* SRTBridge.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SRTBridge.c; sourceTree = "<group>"; };
+		6A10002B2C69210000100101 /* SRTBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SRTBridge.h; sourceTree = "<group>"; };
+		6A10002C2C69210000100101 /* ProCamLinkStudio-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ProCamLinkStudio-Bridging-Header.h"; sourceTree = "<group>"; };
+		6A1000282C69210000100101 /* libsrt.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libsrt.xcframework; path = "../../deps/srt-ios/libsrt.xcframework"; sourceTree = SOURCE_ROOT; };
+		6A10002A2C69210000100101 /* libcrypto.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libcrypto.xcframework; path = "../../deps/srt-ios/libcrypto.xcframework"; sourceTree = SOURCE_ROOT; };
 		6A1000202C69210000100101 /* ProCamLinkStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ProCamLinkStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -53,6 +61,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6A1000272C69210000100101 /* libsrt.xcframework in Frameworks */,
+				6A1000292C69210000100101 /* libcrypto.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +94,9 @@
 				6A1000102C69210000100101 /* SRTStatistics.swift */,
 				6A1000222C69210000100101 /* SRTTransport.swift */,
 				6A1000242C69210000100101 /* MPEGTransportStreamMuxer.swift */,
+				6A1000262C69210000100101 /* SRTBridge.c */,
+				6A10002B2C69210000100101 /* SRTBridge.h */,
+				6A10002C2C69210000100101 /* ProCamLinkStudio-Bridging-Header.h */,
 				6A1000092C69210000100101 /* IntelligentCameraModels.swift */,
 				6A10000A2C69210000100101 /* IntelligentCameraManager.swift */,
 				6A10000B2C69210000100101 /* MonitoringAnalyzer.swift */,
@@ -182,6 +195,7 @@
 				6A10001F2C69210000100101 /* SRTStatistics.swift in Sources */,
 				6A1000212C69210000100101 /* SRTTransport.swift in Sources */,
 				6A1000232C69210000100101 /* MPEGTransportStreamMuxer.swift in Sources */,
+				6A1000252C69210000100101 /* SRTBridge.c in Sources */,
 				6A1000182C69210000100101 /* IntelligentCameraModels.swift in Sources */,
 				6A1000192C69210000100101 /* IntelligentCameraManager.swift in Sources */,
 				6A10001A2C69210000100101 /* MonitoringAnalyzer.swift in Sources */,
@@ -313,6 +327,14 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				GENERATE_INFOPLIST_FILE = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../deps/srt-ios",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../deps/srt-ios/libsrt.xcframework/**/Headers",
+				);
 				INFOPLIST_FILE = ProCamLinkStudio/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -323,6 +345,7 @@
 				PROCAM_BUNDLE_IDENTIFIER = com.procamlink.studio;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PROCAM_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "ProCamLinkStudio/ProCamLinkStudio-Bridging-Header.h";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -337,6 +360,14 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				GENERATE_INFOPLIST_FILE = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../deps/srt-ios",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../deps/srt-ios/libsrt.xcframework/**/Headers",
+				);
 				INFOPLIST_FILE = ProCamLinkStudio/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -347,6 +378,7 @@
 				PROCAM_BUNDLE_IDENTIFIER = com.procamlink.studio;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PROCAM_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "ProCamLinkStudio/ProCamLinkStudio-Bridging-Header.h";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

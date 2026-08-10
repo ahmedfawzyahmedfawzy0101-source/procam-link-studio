@@ -25,6 +25,12 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks
 
+      - name: Build SRT iOS dependencies
+        working-directory: .
+        run: |
+          chmod +x scripts/build-srt-ios.sh
+          scripts/build-srt-ios.sh
+
       - name: Resolve project settings
         run: |
           xcodebuild \

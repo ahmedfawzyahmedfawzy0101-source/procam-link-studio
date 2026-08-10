@@ -27,6 +27,12 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks
 
+      - name: Build SRT iOS dependencies
+        working-directory: .
+        run: |
+          chmod +x scripts/build-srt-ios.sh
+          scripts/build-srt-ios.sh
+
       - name: Build unsigned device app
         run: |
           set -o pipefail

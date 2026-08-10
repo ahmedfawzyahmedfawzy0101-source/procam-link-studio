@@ -224,7 +224,7 @@ Implemented in this milestone:
 
 Not claimed complete in this milestone:
 
-- SRT socket transport is not yet linked because iOS requires upstream `libsrt.xcframework` and `libcrypto.xcframework`.
+- End-to-end encoder-to-muxer-to-SRT live streaming.
 - Windows receiver/control/virtual camera.
 - Final v1.0 IPA.
 
@@ -233,7 +233,9 @@ Not claimed complete in this milestone:
 Implemented in this milestone:
 
 - SRT connection configuration, connection state, and statistics models.
-- `SRTTransport` app surface with explicit dependency-gated behavior until real Haivision SRT frameworks are linked.
+- Reproducible CI build script for pinned Haivision SRT iOS XCFrameworks.
+- Swift/C bridge for actual libsrt startup, socket creation, caller/listener connection, send, stats, and shutdown.
+- `SRTTransport` backed by the libsrt bridge with reconnect and bounded send queue behavior.
 - Native Windows project under `windows/ProCamLinkStudio`.
 - Win32 desktop shell with large preview region, side panels, top telemetry, and bottom recording/audio status bar.
 - Windows receiver state and statistics model.
@@ -243,7 +245,7 @@ Implemented in this milestone:
 
 Not claimed complete in this milestone:
 
-- Actual SRT receive/send sockets.
+- Live VideoToolbox/MPEG-TS/SRT pipeline wiring.
 - MPEG-TS mux/demux.
 - Media Foundation H.264/HEVC decode pipeline.
 - AAC audio decode/playback.
