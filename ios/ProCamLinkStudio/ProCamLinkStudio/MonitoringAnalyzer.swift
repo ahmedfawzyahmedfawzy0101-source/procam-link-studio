@@ -50,6 +50,12 @@ final class MonitoringAnalyzer {
         var red = Array(repeating: 0.0, count: 32)
         var green = Array(repeating: 0.0, count: 32)
         var blue = Array(repeating: 0.0, count: 32)
+        var waveform = Array(repeating: 0.0, count: 64)
+        var waveformCounts = Array(repeating: 0.0, count: 64)
+        var redParade = Array(repeating: 0.0, count: 64)
+        var greenParade = Array(repeating: 0.0, count: 64)
+        var blueParade = Array(repeating: 0.0, count: 64)
+        var vectorscope: [CGPoint] = []
         var clipping = 0.0
         var shadows = 0.0
         var count = 0.0
@@ -60,7 +66,10 @@ final class MonitoringAnalyzer {
             while x < width {
                 let value = Double(pointer[y * bytesPerRow + x]) / 255.0
                 let bin = min(31, max(0, Int(value * 31)))
+                let column = min(63, max(0, Int(Double(x) / Double(max(width - 1, 1)) * 63)))
                 histogram[bin] += 1
+                waveform[column] += value
+                waveformCounts[column] += 1
                 if let uvPointer, uvWidth > 0, uvHeight > 0 {
                     let uvX = min(uvWidth - 1, x / 2) * 2
                     let uvY = min(uvHeight - 1, y / 2)
@@ -73,6 +82,12 @@ final class MonitoringAnalyzer {
                     red[min(31, max(0, Int(r * 31)))] += 1
                     green[min(31, max(0, Int(g * 31)))] += 1
                     blue[min(31, max(0, Int(b * 31)))] += 1
+                    redParade[column] += r
+                    greenParade[column] += g
+                    blueParade[column] += b
+                    if vectorscope.count < 240, x.isMultiple(of: stepX * 4), y.isMultiple(of: stepY * 4) {
+                        vectorscope.append(CGPoint(x: min(max((cb + 128) / 255.0, 0), 1), y: min(max((cr + 128) / 255.0, 0), 1)))
+                    }
                 }
                 if value >= 0.97 { clipping += 1 }
                 if value <= 0.03 { shadows += 1 }
@@ -88,11 +103,28 @@ final class MonitoringAnalyzer {
         let redPeak = max(red.max() ?? 1, 1)
         let greenPeak = max(green.max() ?? 1, 1)
         let bluePeak = max(blue.max() ?? 1, 1)
+        let normalizedWaveform = waveform.enumerated().map { index, value in
+            waveformCounts[index] == 0 ? 0 : value / waveformCounts[index]
+        }
+        let normalizedRedParade = redParade.enumerated().map { index, value in
+            waveformCounts[index] == 0 ? 0 : value / waveformCounts[index]
+        }
+        let normalizedGreenParade = greenParade.enumerated().map { index, value in
+            waveformCounts[index] == 0 ? 0 : value / waveformCounts[index]
+        }
+        let normalizedBlueParade = blueParade.enumerated().map { index, value in
+            waveformCounts[index] == 0 ? 0 : value / waveformCounts[index]
+        }
         return MonitoringAnalysisState(
             lumaHistogram: normalized,
             redHistogram: red.map { $0 / redPeak },
             greenHistogram: green.map { $0 / greenPeak },
             blueHistogram: blue.map { $0 / bluePeak },
+            lumaWaveform: normalizedWaveform,
+            redParade: normalizedRedParade,
+            greenParade: normalizedGreenParade,
+            blueParade: normalizedBlueParade,
+            vectorscopePoints: vectorscope,
             clippingPercent: clipping / count,
             shadowsPercent: shadows / count
         )

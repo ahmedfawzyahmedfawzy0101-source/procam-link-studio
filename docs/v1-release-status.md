@@ -156,6 +156,17 @@ Implemented in this milestone:
 - Preview zebra overlay path using Core Image threshold/mask/stripe composition.
 - Monitoring analysis timing surfaced in the UI.
 
+## Milestone 9 Scope
+
+Implemented in this milestone:
+
+- Reduced-rate luma waveform trace.
+- RGB parade-style traces from YCbCr-derived RGB samples.
+- Vectorscope scatter from sampled chroma values.
+- Preview overlays for waveform, RGB parade, and vectorscope.
+- Visible false-color legend.
+- Separate low/high zebra threshold controls wired to preview processing.
+
 Not claimed complete in this milestone:
 
 - Local recording.

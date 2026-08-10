@@ -616,11 +616,16 @@ private struct MonitoringControlPanel: View {
             ToggleRow(title: "Thermal", isOn: $cameraSession.monitoringState.showThermal)
             ToggleRow(title: "Histogram", isOn: $cameraSession.monitoringState.histogram)
             ToggleRow(title: "RGB Hist", isOn: $cameraSession.monitoringState.rgbHistogram)
+            ToggleRow(title: "Waveform", isOn: $cameraSession.monitoringState.waveform)
+            ToggleRow(title: "RGB Parade", isOn: $cameraSession.monitoringState.rgbParade)
+            ToggleRow(title: "Vectorscope", isOn: $cameraSession.monitoringState.vectorscope)
             ToggleRow(title: "False Color", isOn: $cameraSession.monitoringState.falseColor)
             SliderRow(title: "FC Op", value: monitoringBinding(\.falseColorOpacity), range: 0...1, display: String(format: "%.0f%%", cameraSession.monitoringState.falseColorOpacity * 100))
             ToggleRow(title: "Peaking", isOn: $cameraSession.monitoringState.focusPeaking)
             SliderRow(title: "Peak", value: monitoringBinding(\.focusPeakingSensitivity), range: 0.1...1, display: String(format: "%.2f", cameraSession.monitoringState.focusPeakingSensitivity))
             ToggleRow(title: "Zebras", isOn: $cameraSession.monitoringState.zebras)
+            SliderRow(title: "Z Low", value: monitoringBinding(\.zebraLowThreshold), range: 0...1, display: String(format: "%.0f%%", cameraSession.monitoringState.zebraLowThreshold * 100))
+            SliderRow(title: "Z High", value: monitoringBinding(\.zebraHighThreshold), range: 0...1, display: String(format: "%.0f%%", cameraSession.monitoringState.zebraHighThreshold * 100))
 
             HStack {
                 Badge(title: "Clip", value: String(format: "%.1f%%", cameraSession.monitoringAnalysis.clippingPercent * 100))
@@ -735,6 +740,34 @@ private struct MonitoringOverlay: View {
                 )
                 .frame(width: 150, height: 70)
                 .position(x: 90, y: 118)
+            }
+
+            if monitoring.waveform {
+                ScopeTraceOverlay(title: "WFM", traces: [(analysis.lumaWaveform, .white)])
+                    .frame(width: 160, height: 70)
+                    .position(x: geometry.size.width - 92, y: 118)
+            }
+
+            if monitoring.rgbParade {
+                ScopeTraceOverlay(title: "RGB", traces: [
+                    (analysis.redParade, .red),
+                    (analysis.greenParade, .green),
+                    (analysis.blueParade, .blue)
+                ])
+                .frame(width: 160, height: 70)
+                .position(x: geometry.size.width - 92, y: 198)
+            }
+
+            if monitoring.vectorscope {
+                VectorscopeOverlay(points: analysis.vectorscopePoints)
+                    .frame(width: 92, height: 92)
+                    .position(x: 70, y: 208)
+            }
+
+            if monitoring.falseColor {
+                FalseColorLegend()
+                    .frame(width: 34, height: 130)
+                    .position(x: geometry.size.width - 28, y: geometry.size.height * 0.5)
             }
 
             VStack {
@@ -944,6 +977,86 @@ private struct HistogramPath: Shape {
             }
         }
         return path
+    }
+}
+
+private struct ScopeTraceOverlay: View {
+    let title: String
+    let traces: [([Double], Color)]
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(.black.opacity(0.52))
+            ForEach(Array(traces.enumerated()), id: \.offset) { _, trace in
+                HistogramPath(values: trace.0)
+                    .stroke(trace.1.opacity(0.82), lineWidth: 1)
+                    .padding(6)
+            }
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white.opacity(0.72))
+                .padding(5)
+        }
+    }
+}
+
+private struct VectorscopeOverlay: View {
+    let points: [CGPoint]
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(.black.opacity(0.52))
+            Circle()
+                .stroke(.white.opacity(0.28), lineWidth: 1)
+                .padding(8)
+            Path { path in
+                path.move(to: CGPoint(x: 46, y: 10))
+                path.addLine(to: CGPoint(x: 46, y: 82))
+                path.move(to: CGPoint(x: 10, y: 46))
+                path.addLine(to: CGPoint(x: 82, y: 46))
+            }
+            .stroke(.white.opacity(0.22), lineWidth: 1)
+
+            ForEach(Array(points.prefix(180).enumerated()), id: \.offset) { _, point in
+                Circle()
+                    .fill(.green.opacity(0.55))
+                    .frame(width: 2, height: 2)
+                    .position(x: 10 + point.x * 72, y: 82 - point.y * 72)
+            }
+        }
+    }
+}
+
+private struct FalseColorLegend: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<24, id: \.self) { index in
+                Rectangle()
+                    .fill(falseColor(for: Double(index) / 23.0))
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .overlay {
+            RoundedRectangle(cornerRadius: 5)
+                .stroke(.white.opacity(0.35), lineWidth: 1)
+        }
+    }
+
+    private func falseColor(for value: Double) -> Color {
+        switch value {
+        case 0..<0.25:
+            return .blue
+        case 0.25..<0.45:
+            return .cyan
+        case 0.45..<0.65:
+            return .green
+        case 0.65..<0.85:
+            return .yellow
+        default:
+            return .red
+        }
     }
 }
 

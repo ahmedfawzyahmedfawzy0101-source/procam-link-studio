@@ -272,6 +272,9 @@ struct MonitoringState: Equatable {
     var showThermal = true
     var histogram = false
     var rgbHistogram = false
+    var waveform = false
+    var rgbParade = false
+    var vectorscope = false
     var falseColor = false
     var falseColorOpacity = 0.65
     var zebras = false

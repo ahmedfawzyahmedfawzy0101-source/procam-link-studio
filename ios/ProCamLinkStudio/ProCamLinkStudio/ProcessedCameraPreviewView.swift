@@ -381,17 +381,21 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
     }
 
     private func applyZebras(_ monitoring: MonitoringState, to image: CIImage) -> CIImage {
-        guard let threshold = CIFilter(name: "CIColorThreshold") else { return image }
-        threshold.setValue(image, forKey: kCIInputImageKey)
-        threshold.setValue(monitoring.zebraHighThreshold, forKey: "inputThreshold")
-        guard let mask = threshold.outputImage else { return image }
+        let low = zebraComposite(threshold: monitoring.zebraLowThreshold, color: CIColor(red: 1, green: 0.85, blue: 0.05, alpha: 0.45), image: image)
+        return zebraComposite(threshold: monitoring.zebraHighThreshold, color: CIColor(red: 1, green: 1, blue: 1, alpha: 0.85), image: low)
+    }
 
-        let stripes = CIImage.stripes(extent: image.extent)
-        let zebra = stripes.applyingFilter("CIBlendWithMask", parameters: [
+    private func zebraComposite(threshold thresholdValue: Double, color: CIColor, image: CIImage) -> CIImage {
+        guard let filter = CIFilter(name: "CIColorThreshold") else { return image }
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(thresholdValue, forKey: "inputThreshold")
+        guard let mask = filter.outputImage else { return image }
+
+        let stripes = CIImage.stripes(extent: image.extent, color: color)
+        return stripes.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: image,
             kCIInputMaskImageKey: mask
         ])
-        return zebra
     }
 
     private func adjustedSaturation(_ adjustments: ImageAdjustmentState) -> Double {
@@ -463,11 +467,11 @@ private extension UIView {
 }
 
 private extension CIImage {
-    static func stripes(extent: CGRect) -> CIImage {
+    static func stripes(extent: CGRect, color: CIColor) -> CIImage {
         let stripe = CIFilter(
             name: "CIStripesGenerator",
             parameters: [
-                "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: 0.85),
+                "inputColor0": color,
                 "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 0.0),
                 "inputWidth": 8,
                 "inputSharpness": 1

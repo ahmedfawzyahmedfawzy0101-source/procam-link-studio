@@ -144,6 +144,11 @@ struct MonitoringAnalysisState: Equatable {
     var redHistogram: [Double] = Array(repeating: 0, count: 32)
     var greenHistogram: [Double] = Array(repeating: 0, count: 32)
     var blueHistogram: [Double] = Array(repeating: 0, count: 32)
+    var lumaWaveform: [Double] = Array(repeating: 0, count: 64)
+    var redParade: [Double] = Array(repeating: 0, count: 64)
+    var greenParade: [Double] = Array(repeating: 0, count: 64)
+    var blueParade: [Double] = Array(repeating: 0, count: 64)
+    var vectorscopePoints: [CGPoint] = []
     var clippingPercent: Double = 0
     var shadowsPercent: Double = 0
     var analysisMS: Double = 0
