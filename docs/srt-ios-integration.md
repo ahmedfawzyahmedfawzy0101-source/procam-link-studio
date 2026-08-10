@@ -7,6 +7,7 @@ Upstream Haivision SRT documents iOS/tvOS builds that produce `libsrt.xcframewor
 Current project status:
 
 - `VideoToolboxEncoder` is available for H.264/HEVC compressed frames.
+- `MPEGTransportStreamMuxer` provides PAT/PMT/PES/TS packetization for H.264/HEVC/AAC payloads.
 - Clean and processed frame sources exist.
 - `SRTConnectionConfiguration`, `SRTStatistics`, and `SRTTransport` define the app-side SRT surface.
 - `SRTTransport` intentionally reports a dependency-gated state and does not send traffic until real libsrt bindings are linked.
@@ -19,6 +20,7 @@ Required dependency work before marking SRT implemented:
 3. Add both frameworks to the Xcode project.
 4. Add a thin Swift/C bridge for `srt_startup`, socket creation, caller/listener mode, connection, latency, encryption options, send, stats, and shutdown.
 5. Feed length-prefixed encoded frames from `VideoToolboxEncoder` into the SRT sender.
-6. Validate against a real SRT listener such as Haivision tools or an FFmpeg build with libsrt enabled.
+6. Convert encoded video and AAC audio into MPEG-TS packets suitable for OBS/FFmpeg SRT input.
+7. Validate against a real SRT listener such as Haivision tools, OBS Media Source, or an FFmpeg build with libsrt enabled.
 
 No Apple ID, certificate, or signing credentials are required for adding these source dependencies. The final IPA signing policy remains handled by the existing manual IPA workflow and Sideloadly path.

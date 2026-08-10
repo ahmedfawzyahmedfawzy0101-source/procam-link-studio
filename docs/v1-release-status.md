@@ -251,6 +251,24 @@ Not claimed complete in this milestone:
 - Bonjour/mDNS discovery.
 - Windows virtual camera driver/source.
 
+## Milestone 15 Scope
+
+Implemented in this milestone:
+
+- MPEG-TS muxer foundation for SRT/OBS interoperability.
+- PAT and PMT emission.
+- PES packetization with PTS/DTS timestamp fields.
+- 188-byte transport packet output with continuity counters.
+- H.264, HEVC, and AAC stream type declarations.
+- PCR insertion on key video packets.
+
+Not claimed complete in this milestone:
+
+- VideoToolbox format conversion to Annex B access units.
+- AAC ADTS framing.
+- Encoder-to-muxer-to-SRT live wiring.
+- OBS Direct compatibility validation.
+
 ## No Fake Controls Policy
 
 The UI should expose only controls with real backing behavior. Features that need later pipeline work are tracked here and should not appear as working controls until implemented.
