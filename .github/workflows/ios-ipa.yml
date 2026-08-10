@@ -1,0 +1,71 @@
+name: IPA Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_identifier:
+        description: "Bundle identifier for this build"
+        required: false
+        default: "com.procamlink.studio"
+
+jobs:
+  build-unsigned-ipa:
+    name: Build unsigned IPA for Sideloadly
+    runs-on: macos-26
+
+    defaults:
+      run:
+        working-directory: ios/ProCamLinkStudio
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      - name: Build unsigned device app
+        run: |
+          set -o pipefail
+          rm -rf build unsigned-ipa
+          xcodebuild clean build \
+            -project ProCamLinkStudio.xcodeproj \
+            -scheme ProCamLinkStudio \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            PROCAM_BUNDLE_IDENTIFIER='${{ inputs.bundle_identifier }}' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            VALIDATE_PRODUCT=NO \
+            | tee ../../build-ios-ipa.log
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/ProCamLinkStudio.app"
+          test -d "$APP_PATH"
+          mkdir -p unsigned-ipa/Payload
+          cp -R "$APP_PATH" unsigned-ipa/Payload/
+          cd unsigned-ipa
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent Payload ProCamLinkStudio.ipa
+          /usr/bin/unzip -l ProCamLinkStudio.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProCamLinkStudio-unsigned-ipa
+          path: ios/ProCamLinkStudio/unsigned-ipa/ProCamLinkStudio.ipa
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa-build-log
+          path: build-ios-ipa.log
+          if-no-files-found: ignore

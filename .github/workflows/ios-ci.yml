@@ -1,0 +1,54 @@
+name: CI Compile Check
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  compile-ios:
+    name: Compile ProCamLinkStudio
+    runs-on: macos-26
+
+    defaults:
+      run:
+        working-directory: ios/ProCamLinkStudio
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      - name: Resolve project settings
+        run: |
+          xcodebuild \
+            -project ProCamLinkStudio.xcodeproj \
+            -scheme ProCamLinkStudio \
+            -showBuildSettings \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Compile for iOS Simulator
+        run: |
+          set -o pipefail
+          xcodebuild clean build \
+            -project ProCamLinkStudio.xcodeproj \
+            -scheme ProCamLinkStudio \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee ../../build-ios-ci.log
+
+      - name: Upload compile log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ci-compile-log
+          path: build-ios-ci.log
+          if-no-files-found: ignore
