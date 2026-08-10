@@ -111,6 +111,7 @@ LRESULT App::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         }
         return 0;
     case WM_CREATE:
+        receiver_.StartListener(9000);
         SetTimer(hwnd, 1, 250, nullptr);
         return 0;
     case WM_TIMER:
@@ -193,7 +194,7 @@ void App::DrawPreview(HDC hdc, const RECT& rect) {
     FillRectColor(hdc, preview, RGB(7, 9, 12));
     SetTextColor(hdc, RGB(146, 156, 168));
     const auto state = receiver_.StateSnapshot();
-    DrawTextLine(hdc, state.streamActive ? L"Receiving live stream" : L"Press C to listen for iPhone SRT on port 9000", preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    DrawTextLine(hdc, state.streamActive ? L"Receiving live stream" : state.status, preview, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SetTextColor(hdc, RGB(236, 240, 244));
 }
 

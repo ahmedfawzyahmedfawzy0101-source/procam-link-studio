@@ -316,9 +316,9 @@ struct WhiteBalanceState: Equatable {
 }
 
 struct MonitoringState: Equatable {
-    var grid = true
-    var centerMarker = true
-    var showThermal = true
+    var grid = false
+    var centerMarker = false
+    var showThermal = false
     var histogram = false
     var rgbHistogram = false
     var waveform = false

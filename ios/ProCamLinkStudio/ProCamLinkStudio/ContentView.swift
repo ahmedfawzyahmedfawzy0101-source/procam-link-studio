@@ -2,40 +2,8 @@ import AVFoundation
 import SwiftUI
 
 struct ContentView: View {
-    @State private var launchCamera = false
-
     var body: some View {
-        if launchCamera {
-            CameraStudioView()
-        } else {
-            SafeLaunchView {
-                launchCamera = true
-            }
-        }
-    }
-}
-
-private struct SafeLaunchView: View {
-    let openCamera: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
-            VStack(spacing: 16) {
-                Text("ProCam Link Studio")
-                    .font(.title2.weight(.semibold))
-                Text("Test build safe launch")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.65))
-                Button("Open Camera") {
-                    openCamera()
-                }
-                .buttonStyle(RecordButtonStyle(isRecording: false))
-            }
-            .foregroundStyle(.white)
-            .padding()
-        }
+        CameraStudioView()
     }
 }
 
@@ -45,6 +13,7 @@ private struct CameraStudioView: View {
 
     @State private var selectedPanel: StudioPanel = .camera
     @State private var basePinchZoom: CGFloat = 1
+    @State private var isSettingsPresented = false
     private let lensAssistTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -84,21 +53,15 @@ private struct CameraStudioView: View {
                             geometry: geometry
                         )
 
-                        VStack(spacing: 0) {
-                            TopTelemetryBar(cameraSession: cameraSession)
-                            Spacer()
-                            LensStrip(
-                                devices: deviceManager.devices,
-                                activeDeviceID: cameraSession.activeDeviceID,
-                                select: { device in
-                                    Task { await cameraSession.configure(device: device) }
-                                }
-                            )
-                            ControlDock(
-                                selectedPanel: $selectedPanel,
-                                cameraSession: cameraSession
-                            )
-                        }
+                        CameraHUD(
+                            cameraSession: cameraSession,
+                            devices: deviceManager.devices,
+                            activeDeviceID: cameraSession.activeDeviceID,
+                            openSettings: { isSettingsPresented = true },
+                            selectDevice: { device in
+                                Task { await cameraSession.configure(device: device) }
+                            }
+                        )
                     }
                 }
                 .task {
@@ -115,6 +78,7 @@ private struct CameraStudioView: View {
                 PermissionDeniedView()
             }
         }
+        .statusBarHidden(true)
         .onAppear {
             deviceManager.refreshDevices()
             cameraSession.refreshAuthorizationStatus()
@@ -130,6 +94,15 @@ private struct CameraStudioView: View {
             }
             Task { await cameraSession.configure(device: device) }
         }
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsSheet(
+                selectedPanel: $selectedPanel,
+                cameraSession: cameraSession
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .preferredColorScheme(.dark)
+        }
     }
 
     private func configureFirstAvailableCamera() async {
@@ -138,6 +111,89 @@ private struct CameraStudioView: View {
         }
         await cameraSession.configure(device: firstDevice)
         basePinchZoom = cameraSession.zoomFactor
+    }
+}
+
+private struct CameraHUD: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+    let devices: [CameraDevice]
+    let activeDeviceID: String?
+    let openSettings: () -> Void
+    let selectDevice: (AVCaptureDevice) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cameraSession.activeDeviceName ?? "Camera")
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                    Text(statusLine)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Button("Stream") {
+                    cameraSession.toggleStreaming()
+                }
+                .buttonStyle(RecordButtonStyle(isRecording: cameraSession.streamingStatus.isStreaming))
+
+                Button(cameraSession.recordingState.isRecording ? "Stop" : "Rec") {
+                    cameraSession.toggleRecording()
+                }
+                .buttonStyle(RecordButtonStyle(isRecording: cameraSession.recordingState.isRecording))
+
+                Button {
+                    openSettings()
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 34, height: 30)
+                }
+                .buttonStyle(IconPillButtonStyle())
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
+            .background(.black.opacity(0.34))
+
+            Spacer()
+
+            LensStrip(
+                devices: devices,
+                activeDeviceID: activeDeviceID,
+                select: selectDevice
+            )
+            .padding(.bottom, 6)
+        }
+        .foregroundStyle(.white)
+    }
+
+    private var statusLine: String {
+        let zoom = String(format: "%.1fx", cameraSession.zoomFactor)
+        let stream = cameraSession.streamingStatus.isStreaming ? "SRT On" : "SRT Off"
+        return "\(zoom)  \(stream)"
+    }
+}
+
+private struct SettingsSheet: View {
+    @Binding var selectedPanel: StudioPanel
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        NavigationStack {
+            ControlDock(
+                selectedPanel: $selectedPanel,
+                cameraSession: cameraSession
+            )
+            .padding(.top, 8)
+            .navigationTitle(selectedPanel.rawValue)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .background(Color.black)
     }
 }
 
@@ -249,7 +305,7 @@ private struct LensStrip: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
-        .background(.black.opacity(0.34))
+        .background(.black.opacity(0.24))
     }
 }
 
@@ -259,12 +315,14 @@ private struct ControlDock: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 6) {
-                ForEach(StudioPanel.allCases) { panel in
-                    Button(panel.rawValue) {
-                        selectedPanel = panel
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(StudioPanel.allCases) { panel in
+                        Button(panel.rawValue) {
+                            selectedPanel = panel
+                        }
+                        .buttonStyle(SegmentButtonStyle(isActive: selectedPanel == panel))
                     }
-                    .buttonStyle(SegmentButtonStyle(isActive: selectedPanel == panel))
                 }
             }
 
@@ -565,6 +623,14 @@ private struct StreamControlPanel: View {
                 .keyboardType(.numberPad)
                 .frame(width: 72)
                 .textFieldStyle(StreamTextFieldStyle())
+            }
+
+            if cameraSession.srtConfiguration.host == "127.0.0.1" || cameraSession.srtConfiguration.host.lowercased() == "localhost" {
+                Text("127.0.0.1 sends to the iPhone itself. Enter the Windows IP shown in ProCam Link Studio.")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.yellow)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             HStack(spacing: 8) {
@@ -1369,6 +1435,15 @@ private struct RecordButtonStyle: ButtonStyle {
             .padding(.horizontal, 10)
             .frame(height: 30)
             .background(isRecording ? Color.red.opacity(configuration.isPressed ? 0.65 : 0.86) : Color.white.opacity(configuration.isPressed ? 0.24 : 0.14))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+private struct IconPillButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .background(.white.opacity(configuration.isPressed ? 0.24 : 0.14))
             .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 }

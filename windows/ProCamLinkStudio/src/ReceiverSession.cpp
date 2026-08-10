@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -26,6 +27,39 @@ std::wstring WidenUtf8(const std::string& value) {
 
 std::wstring LastSrtError() {
     return WidenUtf8(srt_getlasterror_str());
+}
+
+std::wstring LocalSrtEndpoint(uint16_t port) {
+    char hostname[256]{};
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
+        return L"srt://<this-pc-ip>:" + std::to_wstring(port);
+    }
+
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    addrinfo* results = nullptr;
+    if (getaddrinfo(hostname, nullptr, &hints, &results) != 0 || !results) {
+        return L"srt://<this-pc-ip>:" + std::to_wstring(port);
+    }
+
+    std::set<std::wstring> addresses;
+    for (addrinfo* item = results; item != nullptr; item = item->ai_next) {
+        auto* ipv4 = reinterpret_cast<sockaddr_in*>(item->ai_addr);
+        char text[INET_ADDRSTRLEN]{};
+        if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text))) {
+            std::string address(text);
+            if (address.rfind("127.", 0) != 0) {
+                addresses.insert(WidenUtf8(address));
+            }
+        }
+    }
+    freeaddrinfo(results);
+
+    if (addresses.empty()) {
+        return L"srt://<this-pc-ip>:" + std::to_wstring(port);
+    }
+    return L"srt://" + *addresses.begin() + L":" + std::to_wstring(port);
 }
 
 } // namespace
@@ -71,7 +105,7 @@ HRESULT ReceiverSession::Initialize() {
     }
 
     mediaFoundationStarted_ = true;
-    state_.status = L"Ready to receive SRT MPEG-TS on port 9000";
+    state_.status = L"Ready. iPhone Stream host: " + LocalSrtEndpoint(9000);
     state_.connection = ConnectionState::Disconnected;
     return S_OK;
 }
@@ -351,6 +385,8 @@ int ReceiverSession::OpenListenerSocket(const SrtReceiverConfiguration& configur
         srt_close(listener);
         return SRT_INVALID_SOCK;
     }
+
+    SetStatus(ConnectionState::Connecting, L"Listening. Set iPhone Stream host to " + LocalSrtEndpoint(configuration.port));
 
     {
         std::scoped_lock socketLock(socketMutex_);
