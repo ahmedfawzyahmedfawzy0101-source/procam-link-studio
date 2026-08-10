@@ -18,7 +18,10 @@ struct ContentView: View {
                     ZStack {
                         ProcessedCameraPreviewView(
                             cameraSession: cameraSession,
-                            tapHandler: cameraSession.focusAndExpose(at:)
+                            tapHandler: { point in
+                                cameraSession.focusAndExpose(at: point)
+                                cameraSession.selectTrackedSubject(at: point)
+                            }
                         )
                         .ignoresSafeArea()
                         .gesture(
@@ -35,6 +38,8 @@ struct ContentView: View {
                             monitoring: cameraSession.monitoringState,
                             thermal: cameraSession.thermalState,
                             focusPoint: cameraSession.focusState.focusPoint,
+                            tracking: cameraSession.trackingState,
+                            horizon: cameraSession.horizonState,
                             geometry: geometry
                         )
 
@@ -220,6 +225,8 @@ private struct ControlDock: View {
                 VideoControlPanel(cameraSession: cameraSession)
             case .image:
                 ImageControlPanel(cameraSession: cameraSession)
+            case .smart:
+                SmartControlPanel(cameraSession: cameraSession)
             case .monitoring:
                 MonitoringControlPanel(cameraSession: cameraSession)
             case .app:
@@ -502,6 +509,48 @@ private struct AdjustmentSlider: View {
     }
 }
 
+private struct SmartControlPanel: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        VStack(spacing: 10) {
+            PickerRow(title: "Frame", selection: Binding(
+                get: { cameraSession.smartFraming.mode },
+                set: {
+                    var next = cameraSession.smartFraming
+                    next.mode = $0
+                    cameraSession.updateSmartFraming(next)
+                }
+            ))
+
+            SliderRow(title: "Speed", value: smartBinding(\.followSpeed), range: 0.05...1, display: String(format: "%.2f", cameraSession.smartFraming.followSpeed))
+            SliderRow(title: "Smooth", value: smartBinding(\.smoothness), range: 0...1, display: String(format: "%.2f", cameraSession.smartFraming.smoothness))
+            SliderRow(title: "Dead", value: smartBinding(\.deadZone), range: 0...0.25, display: String(format: "%.2f", cameraSession.smartFraming.deadZone))
+            SliderRow(title: "Max Z", value: smartBinding(\.maxDigitalZoom), range: 1...3, display: String(format: "%.1fx", cameraSession.smartFraming.maxDigitalZoom))
+            SliderRow(title: "Min Z", value: smartBinding(\.minDigitalZoom), range: 1...2, display: String(format: "%.1fx", cameraSession.smartFraming.minDigitalZoom))
+            SliderRow(title: "Head", value: smartBinding(\.headroom), range: -0.2...0.3, display: String(format: "%+.2f", cameraSession.smartFraming.headroom))
+            SliderRow(title: "Tight", value: smartBinding(\.tightness), range: 0.2...1, display: String(format: "%.2f", cameraSession.smartFraming.tightness))
+
+            HStack {
+                Badge(title: "Subjects", value: "\(cameraSession.trackingState.subjects.count)")
+                Badge(title: "Confidence", value: "\(Int(cameraSession.trackingState.selectedConfidence * 100))%")
+                Badge(title: "Horizon", value: cameraSession.horizonState.isAvailable ? String(format: "%+.1f deg", cameraSession.horizonState.rollDegrees) : "Unavailable")
+            }
+        }
+    }
+
+    private func smartBinding(_ keyPath: WritableKeyPath<SmartFramingSettings, Double>) -> Binding<Double> {
+        Binding(
+            get: { cameraSession.smartFraming[keyPath: keyPath] },
+            set: { value in
+                var next = cameraSession.smartFraming
+                next[keyPath: keyPath] = value
+                cameraSession.updateSmartFraming(next)
+            }
+        )
+    }
+}
+
 private struct MonitoringControlPanel: View {
     @ObservedObject var cameraSession: CameraSessionManager
 
@@ -564,6 +613,8 @@ private struct MonitoringOverlay: View {
     let monitoring: MonitoringState
     let thermal: ThermalStateLabel
     let focusPoint: CGPoint?
+    let tracking: TrackingState
+    let horizon: HorizonState
     let geometry: GeometryProxy
 
     var body: some View {
@@ -584,6 +635,19 @@ private struct MonitoringOverlay: View {
                     .stroke(.yellow, lineWidth: 1.6)
                     .frame(width: 70, height: 70)
                     .position(x: focusPoint.x * geometry.size.width, y: focusPoint.y * geometry.size.height)
+            }
+
+            ForEach(tracking.subjects) { subject in
+                SubjectBox(subject: subject)
+                    .frame(width: subject.normalizedRect.width * geometry.size.width, height: subject.normalizedRect.height * geometry.size.height)
+                    .position(x: subject.normalizedRect.midX * geometry.size.width, y: subject.normalizedRect.midY * geometry.size.height)
+            }
+
+            if horizon.isAvailable {
+                HorizonOverlay()
+                    .stroke(abs(horizon.rollDegrees) > 2 ? .yellow : .green, lineWidth: 1.5)
+                    .frame(width: 150, height: 28)
+                    .rotationEffect(.degrees(horizon.rollDegrees))
             }
 
             VStack {
@@ -714,6 +778,36 @@ private struct FocusReticle: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.addRoundedRect(in: rect, cornerSize: CGSize(width: 6, height: 6))
+        return path
+    }
+}
+
+private struct SubjectBox: View {
+    let subject: DetectedSubject
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(subject.isSelected ? .yellow : .cyan, lineWidth: subject.isSelected ? 2 : 1)
+            Text("\(subject.kind.rawValue) \(Int(subject.confidence * 100))%")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(subject.isSelected ? Color.yellow : Color.cyan)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .offset(x: 4, y: 4)
+        }
+    }
+}
+
+private struct HorizonOverlay: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        path.move(to: CGPoint(x: rect.midX, y: rect.midY - 10))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.midY + 10))
         return path
     }
 }

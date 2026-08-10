@@ -109,6 +109,22 @@ Implemented in this milestone:
 - Portrait, portrait upside-down, landscape left, and landscape right map to Core Image EXIF orientation before fit/fill scaling.
 - Processed preview no longer relies on `AVCaptureVideoPreviewLayer` for orientation.
 
+## Milestone 6 Scope
+
+Implemented in this milestone:
+
+- `docs/v1-final-audit.md` added with explicit final-gate status categories.
+- On-device Vision face detection.
+- On-device Vision human/person rectangle detection.
+- Reduced-rate Vision analysis that does not block capture rendering.
+- Tap-to-select nearest detected subject.
+- Nearest-neighbor subject identity continuity across Vision updates.
+- Subject confidence overlay.
+- Preview-only smart reframing with smoothed crop movement.
+- Subject loss behavior that holds and gradually widens the preview crop.
+- CoreMotion horizon state.
+- Preview-only horizon indicator.
+
 Not claimed complete in this milestone:
 
 - Histogram/RGB histogram/waveform/zebras/focus peaking rendering.

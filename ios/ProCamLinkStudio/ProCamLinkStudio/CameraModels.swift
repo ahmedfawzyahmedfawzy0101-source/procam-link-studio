@@ -34,6 +34,7 @@ enum StudioPanel: String, CaseIterable, Identifiable {
     case camera = "Camera"
     case video = "Video"
     case image = "Image"
+    case smart = "Smart"
     case monitoring = "Monitoring"
     case app = "App"
 

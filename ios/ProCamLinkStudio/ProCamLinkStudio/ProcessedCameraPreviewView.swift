@@ -8,7 +8,8 @@ protocol CameraFrameConsumer: AnyObject {
 }
 
 final class CameraSampleBufferProxy: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-    weak var consumer: CameraFrameConsumer?
+    weak var previewConsumer: CameraFrameConsumer?
+    var analysisHandler: ((CVPixelBuffer, CMTime) -> Void)?
 
     func captureOutput(
         _ output: AVCaptureOutput,
@@ -18,7 +19,9 @@ final class CameraSampleBufferProxy: NSObject, AVCaptureVideoDataOutputSampleBuf
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return
         }
-        consumer?.display(pixelBuffer: pixelBuffer, timestamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        previewConsumer?.display(pixelBuffer: pixelBuffer, timestamp: timestamp)
+        analysisHandler?(pixelBuffer, timestamp)
     }
 }
 
@@ -42,7 +45,9 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
         context.coordinator.update(
             fillMode: cameraSession.previewFillMode,
             orientation: view.previewOrientation,
-            adjustments: cameraSession.imageAdjustments
+            adjustments: cameraSession.imageAdjustments,
+            framing: cameraSession.smartFraming,
+            tracking: cameraSession.trackingState
         )
         context.coordinator.tapHandler = tapHandler
         cameraSession.setFrameConsumer(context.coordinator)
@@ -57,7 +62,9 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
         context.coordinator.update(
             fillMode: cameraSession.previewFillMode,
             orientation: uiView.previewOrientation,
-            adjustments: cameraSession.imageAdjustments
+            adjustments: cameraSession.imageAdjustments,
+            framing: cameraSession.smartFraming,
+            tracking: cameraSession.trackingState
         )
         context.coordinator.tapHandler = tapHandler
         cameraSession.setFrameConsumer(context.coordinator)
@@ -74,6 +81,9 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
     private var fillMode: PreviewFillMode = .fill
     private var orientation: PreviewOrientation = .portrait
     private var adjustments = ImageAdjustmentState.neutral
+    private var framing = SmartFramingSettings()
+    private var tracking = TrackingState()
+    private var smoothedCrop = CGRect(x: 0, y: 0, width: 1, height: 1)
     private let stateQueue = DispatchQueue(label: "studio.procamlink.preview.renderer")
 
     func attach(to view: MTKView) {
@@ -85,11 +95,19 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
         commandQueue = device.makeCommandQueue()
     }
 
-    func update(fillMode: PreviewFillMode, orientation: PreviewOrientation, adjustments: ImageAdjustmentState) {
+    func update(
+        fillMode: PreviewFillMode,
+        orientation: PreviewOrientation,
+        adjustments: ImageAdjustmentState,
+        framing: SmartFramingSettings,
+        tracking: TrackingState
+    ) {
         stateQueue.async {
             self.fillMode = fillMode
             self.orientation = orientation
             self.adjustments = adjustments
+            self.framing = framing
+            self.tracking = tracking
         }
     }
 
@@ -113,7 +131,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
             return
         }
 
-        let snapshot = stateQueue.sync { (latestPixelBuffer, fillMode, orientation, adjustments) }
+        let snapshot = stateQueue.sync { (latestPixelBuffer, fillMode, orientation, adjustments, framing, tracking) }
         guard let pixelBuffer = snapshot.0 else {
             return
         }
@@ -121,6 +139,7 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
         autoreleasepool {
             var image = CIImage(cvPixelBuffer: pixelBuffer)
                 .oriented(forExifOrientation: snapshot.2.exifOrientation)
+            image = applySmartFraming(snapshot.4, tracking: snapshot.5, to: image)
             image = apply(adjustments: snapshot.3, to: image)
             image = image.transformedForDisplay(in: view.drawableSize, fillMode: snapshot.1)
 
@@ -192,6 +211,70 @@ final class ProcessedPreviewRenderer: NSObject, MTKViewDelegate, CameraFrameCons
         }
 
         return applyLook(adjustments.look, intensity: adjustments.lookIntensity, to: output)
+    }
+
+    private func applySmartFraming(_ framing: SmartFramingSettings, tracking: TrackingState, to image: CIImage) -> CIImage {
+        guard framing.mode != .off else {
+            smoothedCrop = CGRect(x: 0, y: 0, width: 1, height: 1)
+            return image
+        }
+
+        let source = image.extent
+        guard let targetRect = tracking.lastSelectedRect ?? tracking.subjects.first?.normalizedRect else {
+            smoothedCrop = smoothedCrop.smoothed(toward: CGRect(x: 0, y: 0, width: 1, height: 1), amount: 0.04)
+            return crop(image, normalizedCrop: smoothedCrop)
+        }
+
+        let desired = desiredCrop(for: targetRect, framing: framing)
+        let distance = smoothedCrop.center.distance(to: desired.center)
+        let amount = distance < CGFloat(framing.deadZone) ? 0.02 : CGFloat(max(0.02, min(0.45, framing.followSpeed * (1 - framing.smoothness + 0.2))))
+        smoothedCrop = smoothedCrop.smoothed(toward: desired, amount: amount).clampedUnit
+
+        let cropped = crop(image, normalizedCrop: smoothedCrop)
+        return cropped.transformed(by: CGAffineTransform(translationX: source.minX - cropped.extent.minX, y: source.minY - cropped.extent.minY))
+    }
+
+    private func desiredCrop(for target: CGRect, framing: SmartFramingSettings) -> CGRect {
+        let targetSize = max(target.width, target.height)
+        let tightness = max(0.1, min(1, framing.tightness))
+        let desiredSubjectShare: CGFloat
+        switch framing.mode {
+        case .headAndShoulders:
+            desiredSubjectShare = 0.46
+        case .halfBody, .creatorPortrait:
+            desiredSubjectShare = 0.36
+        case .fullBody, .group:
+            desiredSubjectShare = 0.24
+        default:
+            desiredSubjectShare = 0.3
+        }
+
+        let zoom = min(max(CGFloat(targetSize / (desiredSubjectShare * tightness)), CGFloat(1 / framing.maxDigitalZoom)), CGFloat(1 / framing.minDigitalZoom))
+        let cropSize = max(0.1, min(1, zoom))
+        var center = target.center
+
+        switch framing.mode {
+        case .ruleOfThirdsLeft:
+            center.x += cropSize * 0.16
+        case .ruleOfThirdsRight:
+            center.x -= cropSize * 0.16
+        default:
+            break
+        }
+
+        center.y += CGFloat(framing.headroom) * cropSize
+        return CGRect(x: center.x - cropSize / 2, y: center.y - cropSize / 2, width: cropSize, height: cropSize)
+    }
+
+    private func crop(_ image: CIImage, normalizedCrop: CGRect) -> CIImage {
+        let source = image.extent
+        let rect = CGRect(
+            x: source.minX + source.width * normalizedCrop.minX,
+            y: source.minY + source.height * (1 - normalizedCrop.maxY),
+            width: source.width * normalizedCrop.width,
+            height: source.height * normalizedCrop.height
+        )
+        return image.cropped(to: rect)
     }
 
     private func adjustedSaturation(_ adjustments: ImageAdjustmentState) -> Double {
@@ -280,5 +363,35 @@ private extension CIImage {
         return transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             .transformed(by: CGAffineTransform(translationX: x, y: y))
+    }
+}
+
+private extension CGRect {
+    var center: CGPoint {
+        CGPoint(x: midX, y: midY)
+    }
+
+    var clampedUnit: CGRect {
+        var next = self
+        next.size.width = min(max(next.width, 0.1), 1)
+        next.size.height = min(max(next.height, 0.1), 1)
+        next.origin.x = min(max(next.origin.x, 0), 1 - next.width)
+        next.origin.y = min(max(next.origin.y, 0), 1 - next.height)
+        return next
+    }
+
+    func smoothed(toward target: CGRect, amount: CGFloat) -> CGRect {
+        CGRect(
+            x: minX + (target.minX - minX) * amount,
+            y: minY + (target.minY - minY) * amount,
+            width: width + (target.width - width) * amount,
+            height: height + (target.height - height) * amount
+        )
+    }
+}
+
+private extension CGPoint {
+    func distance(to other: CGPoint) -> CGFloat {
+        hypot(x - other.x, y - other.y)
     }
 }

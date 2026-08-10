@@ -21,6 +21,9 @@ final class CameraSessionManager: ObservableObject {
     @Published var whiteBalanceState = WhiteBalanceState()
     @Published var monitoringState = MonitoringState()
     @Published var imageAdjustments = ImageAdjustmentState.neutral
+    @Published var smartFraming = SmartFramingSettings()
+    @Published private(set) var trackingState = TrackingState()
+    @Published private(set) var horizonState = HorizonState()
     @Published var selectedRecordingCodec: RecordingCodec = .hevc
     @Published private(set) var availableRecordingCodecs: [RecordingCodec] = [.h264]
     @Published private(set) var recordingState = RecordingState()
@@ -37,6 +40,7 @@ final class CameraSessionManager: ObservableObject {
     private var recordingDelegate: MovieRecordingDelegate?
     private var recordingStartedAt: Date?
     private var recordingTimer: Timer?
+    private let intelligentCamera = IntelligentCameraManager()
     private var activeDevice: AVCaptureDevice?
     private var thermalObserver: NSObjectProtocol?
 
@@ -44,6 +48,13 @@ final class CameraSessionManager: ObservableObject {
         authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
         loadCustomProfiles()
         updateThermalState()
+        intelligentCamera.onSubjectsUpdated = { [weak self] state in
+            Task { @MainActor in self?.trackingState = state }
+        }
+        intelligentCamera.onHorizonUpdated = { [weak self] state in
+            Task { @MainActor in self?.horizonState = state }
+        }
+        intelligentCamera.startMotion()
         thermalObserver = NotificationCenter.default.addObserver(
             forName: ProcessInfo.thermalStateDidChangeNotification,
             object: nil,
@@ -57,6 +68,7 @@ final class CameraSessionManager: ObservableObject {
         if let thermalObserver {
             NotificationCenter.default.removeObserver(thermalObserver)
         }
+        intelligentCamera.stopMotion()
     }
 
     func refreshAuthorizationStatus() {
@@ -147,8 +159,19 @@ final class CameraSessionManager: ObservableObject {
     }
 
     func setFrameConsumer(_ consumer: CameraFrameConsumer?) {
-        sampleBufferProxy.consumer = consumer
+        sampleBufferProxy.previewConsumer = consumer
+        sampleBufferProxy.analysisHandler = { [weak self] pixelBuffer, timestamp in
+            self?.intelligentCamera.analyze(pixelBuffer: pixelBuffer, timestamp: timestamp)
+        }
         videoOutput.setSampleBufferDelegate(sampleBufferProxy, queue: videoOutputQueue)
+    }
+
+    func selectTrackedSubject(at normalizedPoint: CGPoint) {
+        intelligentCamera.selectSubject(at: normalizedPoint)
+    }
+
+    func updateSmartFraming(_ settings: SmartFramingSettings) {
+        smartFraming = settings
     }
 
     func updateImageAdjustments(_ adjustments: ImageAdjustmentState) {
