@@ -77,8 +77,10 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | SRT transport | NOT IMPLEMENTED | Requires linking Haivision `libsrt.xcframework` and `libcrypto.xcframework`; no fake UDP transport is claimed. |
 | Clean stream path | NOT IMPLEMENTED | Requires transport sender wiring. |
 | Processed stream path | NOT IMPLEMENTED | Requires transport sender wiring from the shared processed frame pipeline and VideoToolbox encoder. |
-| Windows receiver | NOT IMPLEMENTED | Not started. |
-| Windows remote controls | NOT IMPLEMENTED | Not started. |
+| Windows native app shell | IMPLEMENTED + SOFTWARE PROCESSING | Win32/CMake project builds a native desktop shell and initializes Media Foundation. |
+| Windows receiver | NOT IMPLEMENTED | State model exists, but actual SRT receive/demux/decode is dependency-gated and not implemented. |
+| Windows remote controls | NOT IMPLEMENTED | ProCam Control Protocol v1 command model exists; network channel and phone confirmations are not implemented. |
+| Windows discovery | NOT IMPLEMENTED | Manual endpoint model exists; Bonjour/mDNS discovery is not implemented. |
 | Windows virtual camera | NOT IMPLEMENTED | Not started. |
 
 ## Image / Looks

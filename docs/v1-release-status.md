@@ -228,6 +228,29 @@ Not claimed complete in this milestone:
 - Windows receiver/control/virtual camera.
 - Final v1.0 IPA.
 
+## Milestone 14 Scope
+
+Implemented in this milestone:
+
+- SRT connection configuration, connection state, and statistics models.
+- `SRTTransport` app surface with explicit dependency-gated behavior until real Haivision SRT frameworks are linked.
+- Native Windows project under `windows/ProCamLinkStudio`.
+- Win32 desktop shell with large preview region, side panels, top telemetry, and bottom recording/audio status bar.
+- Windows receiver state and statistics model.
+- ProCam Control Protocol v1 command/confirmation model.
+- Media Foundation startup/shutdown foundation in the Windows receiver session.
+- Windows GitHub Actions build workflow that packages a `ProCamLinkStudio-Windows.zip` artifact.
+
+Not claimed complete in this milestone:
+
+- Actual SRT receive/send sockets.
+- MPEG-TS mux/demux.
+- Media Foundation H.264/HEVC decode pipeline.
+- AAC audio decode/playback.
+- Remote control networking.
+- Bonjour/mDNS discovery.
+- Windows virtual camera driver/source.
+
 ## No Fake Controls Policy
 
 The UI should expose only controls with real backing behavior. Features that need later pipeline work are tracked here and should not appear as working controls until implemented.

@@ -20,6 +20,9 @@
 		6A10001B2C69210000100101 /* ProcessedFramePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A10000C2C69210000100101 /* ProcessedFramePipeline.swift */; };
 		6A10001C2C69210000100101 /* ProcessedMasterRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A10000D2C69210000100101 /* ProcessedMasterRecorder.swift */; };
 		6A10001D2C69210000100101 /* VideoToolboxEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A10000E2C69210000100101 /* VideoToolboxEncoder.swift */; };
+		6A10001E2C69210000100101 /* SRTConnectionConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A10000F2C69210000100101 /* SRTConnectionConfiguration.swift */; };
+		6A10001F2C69210000100101 /* SRTStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000102C69210000100101 /* SRTStatistics.swift */; };
+		6A1000212C69210000100101 /* SRTTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000222C69210000100101 /* SRTTransport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +40,9 @@
 		6A10000C2C69210000100101 /* ProcessedFramePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessedFramePipeline.swift; sourceTree = "<group>"; };
 		6A10000D2C69210000100101 /* ProcessedMasterRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessedMasterRecorder.swift; sourceTree = "<group>"; };
 		6A10000E2C69210000100101 /* VideoToolboxEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoToolboxEncoder.swift; sourceTree = "<group>"; };
+		6A10000F2C69210000100101 /* SRTConnectionConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SRTConnectionConfiguration.swift; sourceTree = "<group>"; };
+		6A1000102C69210000100101 /* SRTStatistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SRTStatistics.swift; sourceTree = "<group>"; };
+		6A1000222C69210000100101 /* SRTTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SRTTransport.swift; sourceTree = "<group>"; };
 		6A1000202C69210000100101 /* ProCamLinkStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ProCamLinkStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -72,6 +78,9 @@
 				6A10000C2C69210000100101 /* ProcessedFramePipeline.swift */,
 				6A10000D2C69210000100101 /* ProcessedMasterRecorder.swift */,
 				6A10000E2C69210000100101 /* VideoToolboxEncoder.swift */,
+				6A10000F2C69210000100101 /* SRTConnectionConfiguration.swift */,
+				6A1000102C69210000100101 /* SRTStatistics.swift */,
+				6A1000222C69210000100101 /* SRTTransport.swift */,
 				6A1000092C69210000100101 /* IntelligentCameraModels.swift */,
 				6A10000A2C69210000100101 /* IntelligentCameraManager.swift */,
 				6A10000B2C69210000100101 /* MonitoringAnalyzer.swift */,
@@ -166,6 +175,9 @@
 				6A10001B2C69210000100101 /* ProcessedFramePipeline.swift in Sources */,
 				6A10001C2C69210000100101 /* ProcessedMasterRecorder.swift in Sources */,
 				6A10001D2C69210000100101 /* VideoToolboxEncoder.swift in Sources */,
+				6A10001E2C69210000100101 /* SRTConnectionConfiguration.swift in Sources */,
+				6A10001F2C69210000100101 /* SRTStatistics.swift in Sources */,
+				6A1000212C69210000100101 /* SRTTransport.swift in Sources */,
 				6A1000182C69210000100101 /* IntelligentCameraModels.swift in Sources */,
 				6A1000192C69210000100101 /* IntelligentCameraManager.swift in Sources */,
 				6A10001A2C69210000100101 /* MonitoringAnalyzer.swift in Sources */,

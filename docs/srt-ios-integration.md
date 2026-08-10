@@ -8,6 +8,8 @@ Current project status:
 
 - `VideoToolboxEncoder` is available for H.264/HEVC compressed frames.
 - Clean and processed frame sources exist.
+- `SRTConnectionConfiguration`, `SRTStatistics`, and `SRTTransport` define the app-side SRT surface.
+- `SRTTransport` intentionally reports a dependency-gated state and does not send traffic until real libsrt bindings are linked.
 - The actual SRT socket sender is blocked until `libsrt.xcframework` and `libcrypto.xcframework` are added to the repo or produced in CI.
 
 Required dependency work before marking SRT implemented:

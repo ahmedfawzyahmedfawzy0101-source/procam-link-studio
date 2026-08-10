@@ -1,0 +1,35 @@
+name: Windows Build
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  build-windows:
+    name: Build ProCamLinkStudio Windows
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S windows/ProCamLinkStudio -B build/windows -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build/windows --config Release --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
+          Copy-Item build/windows/Release/ProCamLinkStudio.exe artifacts/windows/
+          Compress-Archive -Path artifacts/windows/* -DestinationPath artifacts/ProCamLinkStudio-Windows.zip -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProCamLinkStudio-Windows
+          path: artifacts/ProCamLinkStudio-Windows.zip
