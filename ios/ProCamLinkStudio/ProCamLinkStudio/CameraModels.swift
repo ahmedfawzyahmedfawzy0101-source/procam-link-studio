@@ -13,6 +13,7 @@ enum PreviewFillMode: String, CaseIterable, Identifiable {
 enum StudioPanel: String, CaseIterable, Identifiable {
     case camera = "Camera"
     case video = "Video"
+    case image = "Image"
     case monitoring = "Monitoring"
     case app = "App"
 

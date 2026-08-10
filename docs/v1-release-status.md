@@ -38,9 +38,43 @@ Implemented in this milestone:
 - Preview-only grid, center marker, focus reticle, and thermal display.
 - Process thermal state display through `ProcessInfo.thermalState`.
 
+## Milestone 2 Scope
+
+Implemented in this milestone:
+
+- `AVCaptureVideoDataOutput` frame path added alongside the capture session.
+- `CVPixelBuffer` frames are delivered through a lightweight sample-buffer proxy.
+- Metal-backed `MTKView` preview renderer.
+- Core Image processing is rendered into the Metal drawable without `UIImage`.
+- Image adjustment sliders wired to actual preview processing:
+  - Exposure
+  - Contrast
+  - Highlights
+  - Shadows
+  - Whites
+  - Blacks
+  - Saturation
+  - Vibrance
+  - Temperature
+  - Tint
+  - Sharpness
+  - Denoise
+  - Gamma
+  - Vignette
+- Professional subtle looks wired to the renderer:
+  - Natural
+  - Clean
+  - Soft
+  - Warm
+  - Cool
+  - Cinematic
+  - High Contrast
+  - Mono
+- Look intensity slider.
+- Reset All for image adjustments.
+
 Not claimed complete in this milestone:
 
-- Metal/Core Image image-processing pipeline.
 - Histogram/RGB histogram/waveform/zebras/focus peaking rendering.
 - Local recording.
 - Streaming transports.

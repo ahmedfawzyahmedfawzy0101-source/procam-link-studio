@@ -16,9 +16,8 @@ struct ContentView: View {
             case .authorized:
                 GeometryReader { geometry in
                     ZStack {
-                        CameraPreviewView(
-                            session: cameraSession.session,
-                            fillMode: cameraSession.previewFillMode,
+                        ProcessedCameraPreviewView(
+                            cameraSession: cameraSession,
                             tapHandler: cameraSession.focusAndExpose(at:)
                         )
                         .ignoresSafeArea()
@@ -214,6 +213,8 @@ private struct ControlDock: View {
                 CameraControlPanel(cameraSession: cameraSession)
             case .video:
                 VideoControlPanel(cameraSession: cameraSession)
+            case .image:
+                ImageControlPanel(cameraSession: cameraSession)
             case .monitoring:
                 MonitoringControlPanel(cameraSession: cameraSession)
             case .app:
@@ -375,6 +376,97 @@ private struct VideoControlPanel: View {
                 Badge(title: "Color", value: cameraSession.capabilities.supportsHDR ? "SDR/HDR" : "Rec.709")
             }
         }
+    }
+}
+
+private struct ImageControlPanel: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 10) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(LookPreset.allCases) { look in
+                            Button(look.rawValue) {
+                                var next = cameraSession.imageAdjustments
+                                next.look = look
+                                if look == .natural {
+                                    next.lookIntensity = 0
+                                } else if next.lookIntensity == 0 {
+                                    next.lookIntensity = 0.5
+                                }
+                                cameraSession.updateImageAdjustments(next)
+                            }
+                            .buttonStyle(SegmentButtonStyle(isActive: cameraSession.imageAdjustments.look == look))
+                        }
+                    }
+                }
+
+                AdjustmentSlider(
+                    title: "Look",
+                    value: imageBinding(\.lookIntensity),
+                    range: 0...1,
+                    display: String(format: "%.0f%%", cameraSession.imageAdjustments.lookIntensity * 100)
+                )
+
+                AdjustmentSlider(title: "Exposure", value: imageBinding(\.exposure), range: -2...2, display: signed(cameraSession.imageAdjustments.exposure))
+                AdjustmentSlider(title: "Contrast", value: imageBinding(\.contrast), range: 0.5...1.5, display: String(format: "%.2f", cameraSession.imageAdjustments.contrast))
+                AdjustmentSlider(title: "Highlights", value: imageBinding(\.highlights), range: -1...1, display: signed(cameraSession.imageAdjustments.highlights))
+                AdjustmentSlider(title: "Shadows", value: imageBinding(\.shadows), range: -1...1, display: signed(cameraSession.imageAdjustments.shadows))
+                AdjustmentSlider(title: "Whites", value: imageBinding(\.whites), range: -1...1, display: signed(cameraSession.imageAdjustments.whites))
+                AdjustmentSlider(title: "Blacks", value: imageBinding(\.blacks), range: -1...1, display: signed(cameraSession.imageAdjustments.blacks))
+                AdjustmentSlider(title: "Saturation", value: imageBinding(\.saturation), range: 0...2, display: String(format: "%.2f", cameraSession.imageAdjustments.saturation))
+                AdjustmentSlider(title: "Vibrance", value: imageBinding(\.vibrance), range: -1...1, display: signed(cameraSession.imageAdjustments.vibrance))
+                AdjustmentSlider(title: "Temperature", value: imageBinding(\.temperature), range: -1500...1500, display: String(format: "%+.0fK", cameraSession.imageAdjustments.temperature))
+                AdjustmentSlider(title: "Tint", value: imageBinding(\.tint), range: -100...100, display: signed(cameraSession.imageAdjustments.tint))
+                AdjustmentSlider(title: "Sharpness", value: imageBinding(\.sharpness), range: 0...1, display: String(format: "%.2f", cameraSession.imageAdjustments.sharpness))
+                AdjustmentSlider(title: "Denoise", value: imageBinding(\.denoise), range: 0...1, display: String(format: "%.2f", cameraSession.imageAdjustments.denoise))
+                AdjustmentSlider(title: "Gamma", value: imageBinding(\.gamma), range: 0.5...1.8, display: String(format: "%.2f", cameraSession.imageAdjustments.gamma))
+                AdjustmentSlider(title: "Vignette", value: imageBinding(\.vignette), range: 0...2, display: String(format: "%.2f", cameraSession.imageAdjustments.vignette))
+
+                Button("Reset All") {
+                    cameraSession.resetImageAdjustments()
+                }
+                .buttonStyle(CompactButtonStyle())
+            }
+        }
+        .frame(maxHeight: 330)
+    }
+
+    private func imageBinding(_ keyPath: WritableKeyPath<ImageAdjustmentState, Double>) -> Binding<Double> {
+        Binding(
+            get: { cameraSession.imageAdjustments[keyPath: keyPath] },
+            set: { value in
+                var next = cameraSession.imageAdjustments
+                next[keyPath: keyPath] = value
+                cameraSession.updateImageAdjustments(next)
+            }
+        )
+    }
+
+    private func signed(_ value: Double) -> String {
+        String(format: "%+.2f", value)
+    }
+}
+
+private struct AdjustmentSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let display: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .frame(width: 82, alignment: .leading)
+            Slider(value: $value, in: range)
+            Text(display)
+                .font(.caption.monospacedDigit())
+                .frame(width: 62, alignment: .trailing)
+        }
+        .foregroundStyle(.white)
     }
 }
 

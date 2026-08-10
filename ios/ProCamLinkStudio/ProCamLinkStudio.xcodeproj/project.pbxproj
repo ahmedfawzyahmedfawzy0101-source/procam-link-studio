@@ -13,6 +13,7 @@
 		6A1000142C69210000100101 /* CameraSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000042C69210000100101 /* CameraSessionManager.swift */; };
 		6A1000152C69210000100101 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000052C69210000100101 /* CameraPreviewView.swift */; };
 		6A1000162C69210000100101 /* CameraModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000072C69210000100101 /* CameraModels.swift */; };
+		6A1000172C69210000100101 /* ProcessedCameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1000082C69210000100101 /* ProcessedCameraPreviewView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,6 +24,7 @@
 		6A1000052C69210000100101 /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		6A1000062C69210000100101 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		6A1000072C69210000100101 /* CameraModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraModels.swift; sourceTree = "<group>"; };
+		6A1000082C69210000100101 /* ProcessedCameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessedCameraPreviewView.swift; sourceTree = "<group>"; };
 		6A1000202C69210000100101 /* ProCamLinkStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ProCamLinkStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -54,6 +56,7 @@
 				6A1000042C69210000100101 /* CameraSessionManager.swift */,
 				6A1000052C69210000100101 /* CameraPreviewView.swift */,
 				6A1000072C69210000100101 /* CameraModels.swift */,
+				6A1000082C69210000100101 /* ProcessedCameraPreviewView.swift */,
 				6A1000062C69210000100101 /* Info.plist */,
 			);
 			path = ProCamLinkStudio;
@@ -141,6 +144,7 @@
 				6A1000142C69210000100101 /* CameraSessionManager.swift in Sources */,
 				6A1000152C69210000100101 /* CameraPreviewView.swift in Sources */,
 				6A1000162C69210000100101 /* CameraModels.swift in Sources */,
+				6A1000172C69210000100101 /* ProcessedCameraPreviewView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

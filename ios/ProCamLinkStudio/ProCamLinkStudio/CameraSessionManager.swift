@@ -24,7 +24,10 @@ final class CameraSessionManager: ObservableObject {
     @Published private(set) var thermalState = ThermalStateLabel(title: "Nominal", isRisky: false)
 
     private let sessionQueue = DispatchQueue(label: "studio.procamlink.camera.session")
+    private let videoOutputQueue = DispatchQueue(label: "studio.procamlink.camera.video-output")
     private var currentInput: AVCaptureDeviceInput?
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let sampleBufferProxy = CameraSampleBufferProxy()
     private var activeDevice: AVCaptureDevice?
     private var thermalObserver: NSObjectProtocol?
 
@@ -64,6 +67,7 @@ final class CameraSessionManager: ObservableObject {
             return
         }
 
+        let videoOutput = videoOutput
         let result = await withCheckedContinuation { continuation in
             sessionQueue.async { [session, currentInput] in
                 do {
@@ -83,6 +87,16 @@ final class CameraSessionManager: ObservableObject {
                     }
 
                     session.addInput(input)
+
+                    if !session.outputs.contains(videoOutput) {
+                        videoOutput.alwaysDiscardsLateVideoFrames = true
+                        videoOutput.videoSettings = [
+                            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+                        ]
+                        if session.canAddOutput(videoOutput) {
+                            session.addOutput(videoOutput)
+                        }
+                    }
                     session.commitConfiguration()
 
                     if !session.isRunning {
@@ -115,6 +129,19 @@ final class CameraSessionManager: ObservableObject {
                 session.stopRunning()
             }
         }
+    }
+
+    func setFrameConsumer(_ consumer: CameraFrameConsumer?) {
+        sampleBufferProxy.consumer = consumer
+        videoOutput.setSampleBufferDelegate(sampleBufferProxy, queue: videoOutputQueue)
+    }
+
+    func updateImageAdjustments(_ adjustments: ImageAdjustmentState) {
+        imageAdjustments = adjustments
+    }
+
+    func resetImageAdjustments() {
+        imageAdjustments = .neutral
     }
 
     func setPreviewFillMode(_ mode: PreviewFillMode) {
