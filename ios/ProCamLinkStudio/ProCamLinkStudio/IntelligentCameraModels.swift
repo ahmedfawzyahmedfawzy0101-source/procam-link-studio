@@ -113,6 +113,25 @@ enum PipelinePriorityMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum StabilizationPreset: String, CaseIterable, Identifiable {
+    case tripod = "Tripod"
+    case handheld = "Handheld"
+    case walking = "Walking"
+    case running = "Running"
+    case followCam = "Follow Cam"
+
+    var id: String { rawValue }
+}
+
+struct LensAssistState: Equatable {
+    var isAutoLensEnabled = false
+    var recommendedDeviceID: String?
+    var recommendedLabel = "Wide"
+    var reason = "Balanced framing"
+    var pendingSwitchLabel: String?
+    var lastSwitchTime: TimeInterval = 0
+}
+
 enum AnalysisTask: String {
     case personTracking
     case faceLandmarks

@@ -28,8 +28,8 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | Face-priority autofocus/exposure | IMPLEMENTED + HARDWARE WIRED | Uses tracked subject center as AF/AE metering point where public camera APIs support points; respects manual focus/exposure. |
 | Skin highlight warning | NOT IMPLEMENTED | Required before final v1.0. |
 | Smart zoom | IMPLEMENTED + SOFTWARE PROCESSING | Preview smart crop respects configured min/max digital zoom. |
-| Smart lens recommendation | NOT IMPLEMENTED | Required before final v1.0. |
-| Optional automatic physical lens switching | NOT IMPLEMENTED | Required before final v1.0 if enabled; must include hysteresis. |
+| Smart lens recommendation | IMPLEMENTED + SOFTWARE PROCESSING | Recommends from real discovered lenses based on subject size, framing mode, and digital zoom pressure. |
+| Optional automatic physical lens switching | IMPLEMENTED + HARDWARE WIRED | Opt-in switching uses real `AVCaptureDevice`s with hold time and cooldown. |
 
 ## Stabilization / Motion
 
@@ -37,6 +37,7 @@ Do not mark a feature implemented because UI exists. End-to-end function is requ
 | --- | --- | --- |
 | Native stabilization mode discovery | IMPLEMENTED + HARDWARE WIRED | Enumerates active format-supported Apple stabilization modes. |
 | Native stabilization mode application | IMPLEMENTED + HARDWARE WIRED | Applies selected mode to video/movie capture connections. |
+| Professional stabilization presets | IMPLEMENTED + HARDWARE WIRED | Tripod, Handheld, Walking, Running, Follow Cam choose only supported native modes and digital settings. |
 | CoreMotion horizon indicator | IMPLEMENTED + SOFTWARE PROCESSING | Roll is read locally from CoreMotion and rendered in preview. |
 | Horizon lock / roll correction | IMPLEMENTED + SOFTWARE PROCESSING | Preview transform uses smoothed CoreMotion roll with max correction and crop safety. |
 | Digital post stabilization | IMPLEMENTED + SOFTWARE PROCESSING | Preview transform supports Off/Low/Medium/Strong. Recorded/streamed processed-output path is not complete. |

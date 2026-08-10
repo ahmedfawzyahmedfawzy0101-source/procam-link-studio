@@ -7,6 +7,7 @@ struct ContentView: View {
 
     @State private var selectedPanel: StudioPanel = .camera
     @State private var basePinchZoom: CGFloat = 1
+    private let lensAssistTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
@@ -80,6 +81,13 @@ struct ContentView: View {
         }
         .onDisappear {
             cameraSession.stop()
+        }
+        .onReceive(lensAssistTimer) { _ in
+            guard let deviceID = cameraSession.evaluateLensAssist(devices: deviceManager.devices),
+                  let device = deviceManager.devices.first(where: { $0.device.uniqueID == deviceID })?.device else {
+                return
+            }
+            Task { await cameraSession.configure(device: device) }
         }
     }
 
@@ -573,12 +581,37 @@ private struct SmartControlPanel: View {
             SliderRow(title: "Stab", value: stabilizationBinding(\.strength), range: 0...1, display: String(format: "%.2f", cameraSession.stabilizationSettings.strength))
             SliderRow(title: "Crop", value: stabilizationBinding(\.cropSafetyMargin), range: 0...0.25, display: String(format: "%.0f%%", cameraSession.stabilizationSettings.cropSafetyMargin * 100))
 
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(StabilizationPreset.allCases) { preset in
+                        Button(preset.rawValue) {
+                            cameraSession.applyStabilizationPreset(preset)
+                        }
+                        .buttonStyle(CompactButtonStyle())
+                    }
+                }
+            }
+
+            ToggleRow(
+                title: "Auto Lens",
+                isOn: Binding(
+                    get: { cameraSession.lensAssist.isAutoLensEnabled },
+                    set: { cameraSession.setAutoLensEnabled($0) }
+                )
+            )
+
             HStack {
                 Badge(title: "Subjects", value: "\(cameraSession.trackingState.subjects.count)")
                 Badge(title: "Confidence", value: "\(Int(cameraSession.trackingState.selectedConfidence * 100))%")
                 Badge(title: "State", value: cameraSession.trackingState.lifecycle.rawValue)
                 Badge(title: "Native", value: cameraSession.nativeStabilization.activeMode.rawValue)
                 Badge(title: "Horizon", value: cameraSession.horizonState.isAvailable ? String(format: "%+.1f deg", cameraSession.horizonState.rollDegrees) : "Unavailable")
+            }
+
+            HStack {
+                Badge(title: "Lens", value: cameraSession.lensAssist.recommendedLabel)
+                Badge(title: "Reason", value: cameraSession.lensAssist.pendingSwitchLabel.map { "OPTICAL SWITCH \($0)" } ?? cameraSession.lensAssist.reason)
+                Badge(title: "Digital", value: String(format: "%.1fx", cameraSession.zoomFactor))
             }
         }
     }

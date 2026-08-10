@@ -24,6 +24,7 @@ final class CameraSessionManager: ObservableObject {
     @Published var smartFraming = SmartFramingSettings()
     @Published var stabilizationSettings = StabilizationSettings()
     @Published var performanceBudget = PerformanceBudgetState()
+    @Published private(set) var lensAssist = LensAssistState()
     @Published private(set) var trackingState = TrackingState()
     @Published private(set) var horizonState = HorizonState()
     @Published private(set) var monitoringAnalysis = MonitoringAnalysisState()
@@ -49,6 +50,8 @@ final class CameraSessionManager: ObservableObject {
     private var activeDevice: AVCaptureDevice?
     private var thermalObserver: NSObjectProtocol?
     private var lastSmartMeteringUpdate = Date.distantPast
+    private var lensAssistCandidateID: String?
+    private var lensAssistCandidateStartedAt: TimeInterval?
 
     init() {
         authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
@@ -196,6 +199,76 @@ final class CameraSessionManager: ObservableObject {
 
     func updateStabilizationSettings(_ settings: StabilizationSettings) {
         stabilizationSettings = settings
+    }
+
+    func setAutoLensEnabled(_ enabled: Bool) {
+        lensAssist.isAutoLensEnabled = enabled
+        lensAssist.pendingSwitchLabel = nil
+        lensAssistCandidateID = nil
+        lensAssistCandidateStartedAt = nil
+    }
+
+    func evaluateLensAssist(devices: [CameraDevice]) -> String? {
+        guard let recommendation = lensRecommendation(from: devices) else { return nil }
+        lensAssist.recommendedDeviceID = recommendation.device.uniqueID
+        lensAssist.recommendedLabel = recommendation.label
+        lensAssist.reason = recommendation.reason
+
+        guard lensAssist.isAutoLensEnabled, recommendation.device.uniqueID != activeDeviceID else {
+            lensAssist.pendingSwitchLabel = nil
+            return nil
+        }
+
+        let now = Date().timeIntervalSince1970
+        guard now - lensAssist.lastSwitchTime > 3.0 else { return nil }
+        if lensAssistCandidateID != recommendation.device.uniqueID {
+            lensAssistCandidateID = recommendation.device.uniqueID
+            lensAssistCandidateStartedAt = now
+            lensAssist.pendingSwitchLabel = recommendation.label
+            return nil
+        }
+
+        guard let started = lensAssistCandidateStartedAt, now - started > 1.2 else { return nil }
+        lensAssist.lastSwitchTime = now
+        lensAssist.pendingSwitchLabel = nil
+        return recommendation.device.uniqueID
+    }
+
+    func applyStabilizationPreset(_ preset: StabilizationPreset) {
+        var next = stabilizationSettings
+        switch preset {
+        case .tripod:
+            next.horizonMode = .levelAssist
+            next.digitalMode = .off
+            next.strength = 0.2
+            next.cropSafetyMargin = 0.02
+            setBestNativeStabilization([.off, .standard])
+        case .handheld:
+            next.horizonMode = .levelAssist
+            next.digitalMode = .low
+            next.strength = 0.45
+            next.cropSafetyMargin = 0.06
+            setBestNativeStabilization([.standard, .auto])
+        case .walking:
+            next.horizonMode = .horizonLock
+            next.digitalMode = .medium
+            next.strength = 0.68
+            next.cropSafetyMargin = 0.1
+            setBestNativeStabilization([.cinematic, .standard, .auto])
+        case .running:
+            next.horizonMode = .horizonLock
+            next.digitalMode = .strong
+            next.strength = 0.86
+            next.cropSafetyMargin = 0.16
+            setBestNativeStabilization([.cinematicExtended, .cinematic, .auto])
+        case .followCam:
+            next.horizonMode = .horizonLock
+            next.digitalMode = .medium
+            next.strength = 0.6
+            next.cropSafetyMargin = 0.1
+            setBestNativeStabilization([.cinematic, .standard, .auto])
+        }
+        stabilizationSettings = next
     }
 
     func setNativeStabilization(_ mode: NativeStabilizationMode) {
@@ -659,6 +732,33 @@ final class CameraSessionManager: ObservableObject {
         case .auto:
             return 6
         }
+    }
+
+    private func setBestNativeStabilization(_ preferred: [NativeStabilizationMode]) {
+        if let mode = preferred.first(where: { nativeStabilization.availableModes.contains($0) }) {
+            setNativeStabilization(mode)
+        }
+    }
+
+    private func lensRecommendation(from devices: [CameraDevice]) -> (device: AVCaptureDevice, label: String, reason: String)? {
+        guard !devices.isEmpty else { return nil }
+        let subjectSize = trackingState.lastSelectedRect.map { max($0.width, $0.height) } ?? 0.28
+        let wantsWide = smartFraming.mode == .group || subjectSize > 0.62 || zoomFactor < 0.9
+        let wantsTele = subjectSize < 0.22 && zoomFactor > 1.4 && smartFraming.mode != .group
+
+        if wantsWide, let ultra = devices.first(where: { $0.device.deviceType == .builtInUltraWideCamera }) {
+            return (ultra.device, "Ultra Wide", "Group/large subject needs wider optical FOV")
+        }
+
+        if wantsTele, let tele = devices.first(where: { $0.device.deviceType == .builtInTelephotoCamera }) {
+            return (tele.device, "Telephoto", "Small subject with digital zoom pressure")
+        }
+
+        if let wide = devices.first(where: { $0.device.deviceType == .builtInWideAngleCamera && $0.device.position == .back }) {
+            return (wide.device, "Wide", "Balanced framing with optical wide lens")
+        }
+
+        return devices.first.map { ($0.device, $0.displayName, "Only available optical camera") }
     }
 
     private func applyFormatGoal(_ goal: CameraProfile.FormatGoal) {

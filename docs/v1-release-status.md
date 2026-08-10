@@ -167,6 +167,17 @@ Implemented in this milestone:
 - Visible false-color legend.
 - Separate low/high zebra threshold controls wired to preview processing.
 
+## Milestone 10 Scope
+
+Implemented in this milestone:
+
+- Smart Lens Assist recommendation logic from subject size, framing goal, discovered physical lenses, and current digital zoom.
+- Optional Auto Lens switching using discovered `AVCaptureDevice`s.
+- Auto Lens cooldown, minimum hold time, and pending-switch label to prevent bouncing.
+- Clear optical switch versus digital zoom messaging.
+- Professional stabilization presets: Tripod, Handheld, Walking, Running, Follow Cam.
+- Presets choose only currently supported native stabilization modes.
+
 Not claimed complete in this milestone:
 
 - Local recording.
