@@ -108,13 +108,21 @@ LRESULT App::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         } else if (wparam == 'D') {
             receiver_.Disconnect();
             InvalidateRect(hwnd, nullptr, FALSE);
+        } else if (wparam == 'S') {
+            receiver_.AdvertiseDiscovery();
+            InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
     case WM_CREATE:
         receiver_.StartListener(9000);
+        receiver_.AdvertiseDiscovery();
         SetTimer(hwnd, 1, 250, nullptr);
         return 0;
     case WM_TIMER:
+        if (++discoveryTimerTicks_ >= 8) {
+            discoveryTimerTicks_ = 0;
+            receiver_.AdvertiseDiscovery();
+        }
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     case WM_PAINT:
@@ -208,7 +216,7 @@ void App::DrawFooter(HDC hdc, const RECT& rect) {
     const std::wstring line =
         std::wstring(L"Record: ") + (state.recordingEnabled ? L"On" : L"Off") +
         L"   Audio: " + (state.audioPlaybackEnabled ? L"On" : L"Off") +
-        L"   Shortcuts: C connect listener, D disconnect, R record, A audio";
+        L"   Shortcuts: S search/advertise, C listen, D disconnect, R record, A audio";
     DrawTextLine(hdc, line, text);
 }
 

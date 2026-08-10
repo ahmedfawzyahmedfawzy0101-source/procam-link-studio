@@ -48,6 +48,7 @@ public:
     void Disconnect();
     void ToggleAudioPlayback();
     void ToggleRecording();
+    void AdvertiseDiscovery();
 
     StudioState StateSnapshot() const;
 

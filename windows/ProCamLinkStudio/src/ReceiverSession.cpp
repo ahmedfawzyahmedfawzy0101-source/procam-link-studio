@@ -98,6 +98,15 @@ std::wstring SrtInstruction(uint16_t port) {
     return L"Listening. Set iPhone Stream host to " + LocalSrtEndpoint(port);
 }
 
+std::string NarrowAscii(const std::wstring& value) {
+    std::string result;
+    result.reserve(value.size());
+    for (wchar_t ch : value) {
+        result.push_back(ch >= 0 && ch <= 127 ? static_cast<char>(ch) : '?');
+    }
+    return result;
+}
+
 } // namespace
 
 ReceiverSession::~ReceiverSession() {
@@ -231,6 +240,36 @@ void ReceiverSession::ToggleRecording() {
     if (!state_.recordingEnabled && recordingFile_.is_open()) {
         recordingFile_.close();
     }
+}
+
+void ReceiverSession::AdvertiseDiscovery() {
+    const std::wstring endpoint = LocalSrtEndpoint(9000);
+    const auto separator = endpoint.rfind(L':');
+    if (separator == std::wstring::npos) {
+        return;
+    }
+
+    const std::string host = NarrowAscii(endpoint.substr(0, separator));
+    const std::string port = NarrowAscii(endpoint.substr(separator + 1));
+    if (host.empty() || host.front() == '<') {
+        return;
+    }
+
+    const std::string payload = "PROCAMLINK_STUDIO;host=" + host + ";port=" + port + ";name=ProCam Link Studio";
+    SOCKET udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udp == INVALID_SOCKET) {
+        return;
+    }
+
+    BOOL yes = TRUE;
+    setsockopt(udp, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&yes), sizeof(yes));
+
+    sockaddr_in target{};
+    target.sin_family = AF_INET;
+    target.sin_port = htons(47777);
+    target.sin_addr.s_addr = INADDR_BROADCAST;
+    sendto(udp, payload.c_str(), static_cast<int>(payload.size()), 0, reinterpret_cast<sockaddr*>(&target), sizeof(target));
+    closesocket(udp);
 }
 
 StudioState ReceiverSession::StateSnapshot() const {

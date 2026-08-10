@@ -20,6 +20,7 @@ private:
     void DrawFooter(HDC hdc, const RECT& rect);
 
     ReceiverSession receiver_;
+    int discoveryTimerTicks_ = 0;
 };
 
 } // namespace procam

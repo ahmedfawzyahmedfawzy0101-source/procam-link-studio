@@ -10,6 +10,7 @@ struct ContentView: View {
 private struct CameraStudioView: View {
     @StateObject private var cameraSession = CameraSessionManager()
     @StateObject private var deviceManager = CameraDeviceManager()
+    @StateObject private var discoveryManager = ReceiverDiscoveryManager()
 
     @State private var selectedPanel: StudioPanel = .camera
     @State private var basePinchZoom: CGFloat = 1
@@ -83,9 +84,11 @@ private struct CameraStudioView: View {
             deviceManager.refreshDevices()
             cameraSession.refreshAuthorizationStatus()
             cameraSession.refreshAudioAuthorizationStatus()
+            discoveryManager.start()
         }
         .onDisappear {
             cameraSession.stop()
+            discoveryManager.stop()
         }
         .onReceive(lensAssistTimer) { _ in
             guard let deviceID = cameraSession.evaluateLensAssist(devices: deviceManager.devices),
@@ -94,10 +97,21 @@ private struct CameraStudioView: View {
             }
             Task { await cameraSession.configure(device: device) }
         }
+        .onReceive(discoveryManager.$receiver) { receiver in
+            guard let receiver, !cameraSession.streamingStatus.isStreaming else { return }
+            var configuration = cameraSession.srtConfiguration
+            if configuration.host != receiver.host || configuration.port != receiver.port {
+                configuration.mode = .caller
+                configuration.host = receiver.host
+                configuration.port = receiver.port
+                cameraSession.updateSRTConfiguration(configuration)
+            }
+        }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsSheet(
                 selectedPanel: $selectedPanel,
-                cameraSession: cameraSession
+                cameraSession: cameraSession,
+                discoveryManager: discoveryManager
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -141,12 +155,14 @@ private struct CameraHUD: View {
 private struct SettingsSheet: View {
     @Binding var selectedPanel: StudioPanel
     @ObservedObject var cameraSession: CameraSessionManager
+    @ObservedObject var discoveryManager: ReceiverDiscoveryManager
 
     var body: some View {
         NavigationStack {
             ControlDock(
                 selectedPanel: $selectedPanel,
-                cameraSession: cameraSession
+                cameraSession: cameraSession,
+                discoveryManager: discoveryManager
             )
             .padding(.top, 8)
             .navigationTitle(selectedPanel.rawValue)
@@ -247,10 +263,25 @@ private struct TopTelemetryBar: View {
 
     private var statusLine: String {
         let iso = Int(cameraSession.exposureState.iso.rounded())
-        let shutter = shutterLabel(seconds: cameraSession.exposureState.shutterSeconds)
-        let ev = String(format: "%+.1fEV", cameraSession.exposureState.exposureBias)
         let zoom = String(format: "%.1fx", cameraSession.zoomFactor)
-        return "\(zoom)  ISO \(iso)  \(shutter)  \(ev)"
+        return "\(zoom)  ISO \(iso)  \(streamStateLabel)"
+    }
+
+    private var streamStateLabel: String {
+        switch cameraSession.streamingStatus.state {
+        case .connected:
+            return "SRT Connected"
+        case .connecting:
+            return "SRT Connecting"
+        case .reconnecting(let attempt):
+            return "SRT Retry \(attempt)"
+        case .failed:
+            return "SRT Failed"
+        case .disconnecting:
+            return "SRT Closing"
+        case .disconnected:
+            return cameraSession.streamingStatus.isStreaming ? "SRT Starting" : "SRT Off"
+        }
     }
 }
 
@@ -288,6 +319,7 @@ private struct LensStrip: View {
 private struct ControlDock: View {
     @Binding var selectedPanel: StudioPanel
     @ObservedObject var cameraSession: CameraSessionManager
+    @ObservedObject var discoveryManager: ReceiverDiscoveryManager
 
     var body: some View {
         VStack(spacing: 10) {
@@ -308,7 +340,7 @@ private struct ControlDock: View {
             case .video:
                 VideoControlPanel(cameraSession: cameraSession)
             case .stream:
-                StreamControlPanel(cameraSession: cameraSession)
+                StreamControlPanel(cameraSession: cameraSession, discoveryManager: discoveryManager)
             case .image:
                 ImageControlPanel(cameraSession: cameraSession)
             case .smart:
@@ -562,6 +594,7 @@ private struct VideoControlPanel: View {
 
 private struct StreamControlPanel: View {
     @ObservedObject var cameraSession: CameraSessionManager
+    @ObservedObject var discoveryManager: ReceiverDiscoveryManager
 
     var body: some View {
         VStack(spacing: 8) {
@@ -578,6 +611,21 @@ private struct StreamControlPanel: View {
                     cameraSession.toggleStreaming()
                 }
                 .buttonStyle(RecordButtonStyle(isRecording: cameraSession.streamingStatus.isStreaming))
+            }
+
+            HStack(spacing: 8) {
+                Badge(title: "Windows", value: discoveryManager.receiver?.endpointLabel ?? discoveryManager.status)
+                if let receiver = discoveryManager.receiver {
+                    Button("Use") {
+                        updateConfig {
+                            $0.mode = .caller
+                            $0.host = receiver.host
+                            $0.port = receiver.port
+                        }
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                    .disabled(cameraSession.streamingStatus.isStreaming)
+                }
             }
 
             HStack(spacing: 8) {
