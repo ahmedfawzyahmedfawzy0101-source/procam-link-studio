@@ -9,6 +9,7 @@ struct EncodedVideoFrame {
     let presentationTime: CMTime
     let duration: CMTime
     let isKeyFrame: Bool
+    let parameterSets: [Data]?
 }
 
 struct VideoEncoderConfiguration: Equatable {
@@ -121,7 +122,8 @@ final class VideoToolboxEncoder {
                 data: data,
                 presentationTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
                 duration: CMSampleBufferGetDuration(sampleBuffer),
-                isKeyFrame: sampleBuffer.isKeyFrame
+                isKeyFrame: sampleBuffer.isKeyFrame,
+                parameterSets: sampleBuffer.isKeyFrame ? sampleBuffer.parameterSets : nil
             )
         )
     }
@@ -190,5 +192,80 @@ private extension CMSampleBuffer {
             return true
         }
         return !(first[kCMSampleAttachmentKey_NotSync as String] as? Bool ?? false)
+    }
+
+    var parameterSets: [Data] {
+        guard let formatDescription = CMSampleBufferGetFormatDescription(self) else { return [] }
+        let codec = CMFormatDescriptionGetMediaSubType(formatDescription)
+        switch codec {
+        case kCMVideoCodecType_H264:
+            return h264ParameterSets(from: formatDescription)
+        case kCMVideoCodecType_HEVC:
+            return hevcParameterSets(from: formatDescription)
+        default:
+            return []
+        }
+    }
+
+    private func h264ParameterSets(from formatDescription: CMFormatDescription) -> [Data] {
+        var sets: [Data] = []
+        var setCount = 0
+        var nalHeaderLength: Int32 = 0
+        guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+            formatDescription,
+            parameterSetIndex: 0,
+            parameterSetPointerOut: nil,
+            parameterSetSizeOut: nil,
+            parameterSetCountOut: &setCount,
+            nalUnitHeaderLengthOut: &nalHeaderLength
+        ) == noErr else {
+            return []
+        }
+        for index in 0..<setCount {
+            var pointer: UnsafePointer<UInt8>?
+            var size = 0
+            if CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+                formatDescription,
+                parameterSetIndex: index,
+                parameterSetPointerOut: &pointer,
+                parameterSetSizeOut: &size,
+                parameterSetCountOut: nil,
+                nalUnitHeaderLengthOut: nil
+            ) == noErr, let pointer {
+                sets.append(Data(bytes: pointer, count: size))
+            }
+        }
+        return sets
+    }
+
+    private func hevcParameterSets(from formatDescription: CMFormatDescription) -> [Data] {
+        var sets: [Data] = []
+        var setCount = 0
+        var nalHeaderLength: Int32 = 0
+        guard CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
+            formatDescription,
+            parameterSetIndex: 0,
+            parameterSetPointerOut: nil,
+            parameterSetSizeOut: nil,
+            parameterSetCountOut: &setCount,
+            nalUnitHeaderLengthOut: &nalHeaderLength
+        ) == noErr else {
+            return []
+        }
+        for index in 0..<setCount {
+            var pointer: UnsafePointer<UInt8>?
+            var size = 0
+            if CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
+                formatDescription,
+                parameterSetIndex: index,
+                parameterSetPointerOut: &pointer,
+                parameterSetSizeOut: &size,
+                parameterSetCountOut: nil,
+                nalUnitHeaderLengthOut: nil
+            ) == noErr, let pointer {
+                sets.append(Data(bytes: pointer, count: size))
+            }
+        }
+        return sets
     }
 }

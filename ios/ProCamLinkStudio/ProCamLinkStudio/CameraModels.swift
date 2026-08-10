@@ -33,6 +33,7 @@ enum PreviewOrientation: Equatable {
 enum StudioPanel: String, CaseIterable, Identifiable {
     case camera = "Camera"
     case video = "Video"
+    case stream = "Stream"
     case image = "Image"
     case smart = "Smart"
     case monitoring = "Monitoring"

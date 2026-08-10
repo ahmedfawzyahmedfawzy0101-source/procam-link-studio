@@ -36,6 +36,8 @@ final class CameraSessionManager: ObservableObject {
     @Published var selectedRecordingQuality: RecordingQualityPreset = .matchCamera
     @Published private(set) var availableRecordingCodecs: [RecordingCodec] = [.h264]
     @Published private(set) var recordingState = RecordingState()
+    @Published var srtConfiguration = SRTConnectionConfiguration()
+    @Published private(set) var streamingStatus = StreamingStatus()
     @Published private(set) var profiles: [CameraProfile] = CameraProfile.builtIns
     @Published private(set) var activeProfileName: String = "Natural"
     @Published private(set) var thermalState = ThermalStateLabel(title: "Nominal", isRisky: false)
@@ -57,6 +59,7 @@ final class CameraSessionManager: ObservableObject {
     private var activeRecordingMode: RecordingMode?
     private let intelligentCamera = IntelligentCameraManager()
     private let monitoringAnalyzer = MonitoringAnalyzer()
+    private let streamingManager = StreamingManager()
     private var activeDevice: AVCaptureDevice?
     private var thermalObserver: NSObjectProtocol?
     private var lastSmartMeteringUpdate = Date.distantPast
@@ -92,6 +95,14 @@ final class CameraSessionManager: ObservableObject {
         processedRecorder.onFinish = { [weak self] outputURL, error in
             Task { @MainActor in
                 self?.finishRecording(url: outputURL, error: error)
+            }
+        }
+        streamingManager.onStatusChanged = { [weak self] status in
+            Task { @MainActor in
+                self?.streamingStatus = status
+                if let error = status.lastError {
+                    self?.lastError = error
+                }
             }
         }
         audioSampleBufferProxy.sampleHandler = { [weak self] sampleBuffer in
@@ -262,6 +273,7 @@ final class CameraSessionManager: ObservableObject {
                     state: self.currentFrameProcessingState(includeMonitoring: false)
                 )
             }
+            self.streamingManager.appendVideo(pixelBuffer: pixelBuffer, timestamp: timestamp)
         }
         videoOutput.setSampleBufferDelegate(sampleBufferProxy, queue: videoOutputQueue)
     }
@@ -409,6 +421,31 @@ final class CameraSessionManager: ObservableObject {
 
     func toggleRecording() {
         recordingState.isRecording ? stopRecording() : startRecording()
+    }
+
+    func updateSRTConfiguration(_ configuration: SRTConnectionConfiguration) {
+        srtConfiguration = configuration
+        streamingManager.updateConfiguration(configuration)
+    }
+
+    func toggleStreaming() {
+        streamingStatus.isStreaming ? stopStreaming() : startStreaming()
+    }
+
+    func startStreaming() {
+        guard !streamingStatus.isStreaming else { return }
+        let source = activeSourceDimensions()
+        streamingManager.start(
+            configuration: srtConfiguration,
+            codec: selectedRecordingCodec,
+            width: source.width,
+            height: source.height,
+            fps: activeFPS()
+        )
+    }
+
+    func stopStreaming() {
+        streamingManager.stop()
     }
 
     func startRecording() {
@@ -945,6 +982,13 @@ final class CameraSessionManager: ObservableObject {
         return (Int(dimensions.width), Int(dimensions.height))
     }
 
+    private func activeFPS() -> Int {
+        guard let activeDevice else { return 30 }
+        let seconds = CMTimeGetSeconds(activeDevice.activeVideoMinFrameDuration)
+        guard seconds > 0, seconds.isFinite else { return 30 }
+        return max(1, Int((1.0 / seconds).rounded()))
+    }
+
     private func currentFrameProcessingState(includeMonitoring: Bool) -> FrameProcessingState {
         FrameProcessingState(
             orientation: currentPreviewOrientation,
@@ -974,6 +1018,7 @@ final class CameraSessionManager: ObservableObject {
         if activeRecordingMode == .processedMaster {
             processedRecorder.appendAudio(sampleBuffer: sampleBuffer)
         }
+        streamingManager.appendAudio(sampleBuffer: sampleBuffer)
     }
 
     private func updateSyncStatus() {

@@ -233,6 +233,8 @@ private struct ControlDock: View {
                 CameraControlPanel(cameraSession: cameraSession)
             case .video:
                 VideoControlPanel(cameraSession: cameraSession)
+            case .stream:
+                StreamControlPanel(cameraSession: cameraSession)
             case .image:
                 ImageControlPanel(cameraSession: cameraSession)
             case .smart:
@@ -481,6 +483,120 @@ private struct VideoControlPanel: View {
     private var syncOffsetLabel: String {
         guard let offset = cameraSession.audioMeter.syncOffsetMS else { return "-" }
         return String(format: "%+.1fms", offset)
+    }
+}
+
+private struct StreamControlPanel: View {
+    @ObservedObject var cameraSession: CameraSessionManager
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(SRTConnectionMode.allCases) { mode in
+                    Button(mode.rawValue) {
+                        updateConfig { $0.mode = mode }
+                    }
+                    .buttonStyle(SegmentButtonStyle(isActive: cameraSession.srtConfiguration.mode == mode))
+                    .disabled(cameraSession.streamingStatus.isStreaming)
+                }
+
+                Button(cameraSession.streamingStatus.isStreaming ? "Stop SRT" : "Start SRT") {
+                    cameraSession.toggleStreaming()
+                }
+                .buttonStyle(RecordButtonStyle(isRecording: cameraSession.streamingStatus.isStreaming))
+            }
+
+            HStack(spacing: 8) {
+                TextField("Host", text: Binding(
+                    get: { cameraSession.srtConfiguration.host },
+                    set: { value in updateConfig { $0.host = value } }
+                ))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.numbersAndPunctuation)
+                .textFieldStyle(StreamTextFieldStyle())
+
+                TextField("Port", text: Binding(
+                    get: { "\(cameraSession.srtConfiguration.port)" },
+                    set: { value in
+                        updateConfig { $0.port = UInt16(value) ?? $0.port }
+                    }
+                ))
+                .keyboardType(.numberPad)
+                .frame(width: 72)
+                .textFieldStyle(StreamTextFieldStyle())
+            }
+
+            HStack(spacing: 8) {
+                TextField("Stream ID", text: Binding(
+                    get: { cameraSession.srtConfiguration.streamID },
+                    set: { value in updateConfig { $0.streamID = value } }
+                ))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(StreamTextFieldStyle())
+
+                SecureField("Passphrase", text: Binding(
+                    get: { cameraSession.srtConfiguration.passphrase },
+                    set: { value in updateConfig { $0.passphrase = value } }
+                ))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(StreamTextFieldStyle())
+            }
+
+            SliderRow(
+                title: "Latency",
+                value: Binding(
+                    get: { Double(cameraSession.srtConfiguration.latencyMS) },
+                    set: { value in updateConfig { $0.latencyMS = Int(value.rounded()) } }
+                ),
+                range: 40...800,
+                display: "\(cameraSession.srtConfiguration.latencyMS)ms"
+            )
+
+            HStack {
+                Badge(title: "State", value: streamStateLabel)
+                Badge(title: "Rate", value: String(format: "%.2f Mbps", cameraSession.streamingStatus.statistics.sendBitrateMbps))
+                Badge(title: "RTT", value: String(format: "%.0f ms", cameraSession.streamingStatus.statistics.rttMS))
+                Badge(title: "Frames", value: "\(cameraSession.streamingStatus.encodedFrames)")
+            }
+
+            HStack {
+                Badge(title: "Loss", value: String(format: "%.2f%%", cameraSession.streamingStatus.statistics.packetLossPercent))
+                Badge(title: "Queue", value: "\(cameraSession.streamingStatus.statistics.sendQueueDepth)")
+                Badge(title: "Dropped", value: "\(cameraSession.streamingStatus.droppedFrames + cameraSession.streamingStatus.statistics.droppedQueuePackets)")
+                Badge(title: "Sent", value: sentSizeLabel)
+            }
+        }
+    }
+
+    private var streamStateLabel: String {
+        switch cameraSession.streamingStatus.state {
+        case .disconnected:
+            return "Idle"
+        case .connecting:
+            return "Connecting"
+        case .connected:
+            return "Connected"
+        case .reconnecting(let attempt):
+            return "Retry \(attempt)"
+        case .disconnecting:
+            return "Stopping"
+        case .failed:
+            return "Failed"
+        }
+    }
+
+    private var sentSizeLabel: String {
+        let megabytes = Double(cameraSession.streamingStatus.sentBytes) / 1_000_000
+        return String(format: "%.1f MB", megabytes)
+    }
+
+    private func updateConfig(_ update: (inout SRTConnectionConfiguration) -> Void) {
+        var next = cameraSession.srtConfiguration
+        update(&next)
+        cameraSession.updateSRTConfiguration(next)
     }
 }
 
@@ -1172,6 +1288,18 @@ private struct SegmentButtonStyle: ButtonStyle {
             .padding(.horizontal, 9)
             .frame(height: 30)
             .background(isActive ? Color.blue.opacity(0.82) : Color.white.opacity(configuration.isPressed ? 0.2 : 0.11))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+private struct StreamTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .frame(height: 32)
+            .background(.white.opacity(0.11))
             .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 }
