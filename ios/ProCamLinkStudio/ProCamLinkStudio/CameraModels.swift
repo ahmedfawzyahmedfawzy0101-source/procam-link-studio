@@ -385,7 +385,7 @@ struct RecordingState: Equatable {
 }
 
 struct AudioMeterState: Equatable {
-    var isEnabled = true
+    var isEnabled = false
     var isAuthorized = false
     var rmsLevel: Double = 0
     var peakLevel: Double = 0

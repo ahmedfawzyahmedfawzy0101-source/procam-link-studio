@@ -25,7 +25,15 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks
 
+      - name: Cache SRT iOS dependencies
+        id: cache-srt-ios
+        uses: actions/cache@v4
+        with:
+          path: deps/srt-ios
+          key: srt-ios-${{ runner.os }}-${{ hashFiles('scripts/build-srt-ios.sh') }}
+
       - name: Build SRT iOS dependencies
+        if: steps.cache-srt-ios.outputs.cache-hit != 'true'
         working-directory: .
         run: |
           chmod +x scripts/build-srt-ios.sh

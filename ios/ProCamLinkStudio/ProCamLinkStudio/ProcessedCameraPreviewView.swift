@@ -39,7 +39,9 @@ struct ProcessedCameraPreviewView: UIViewRepresentable {
         view.enableSetNeedsDisplay = false
         view.isPaused = true
         view.backgroundColor = .black
-        view.delegate = context.coordinator
+        if view.device != nil {
+            view.delegate = context.coordinator
+        }
 
         context.coordinator.attach(to: view)
         cameraSession.updatePreviewOrientation(view.previewOrientation)

@@ -63,6 +63,7 @@ struct ContentView: View {
                     }
                 }
                 .task {
+                    try? await Task.sleep(nanoseconds: 350_000_000)
                     await configureFirstAvailableCamera()
                 }
 

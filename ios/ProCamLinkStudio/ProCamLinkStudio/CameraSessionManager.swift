@@ -65,6 +65,7 @@ final class CameraSessionManager: ObservableObject {
     private var lastSmartMeteringUpdate = Date.distantPast
     private var lensAssistCandidateID: String?
     private var lensAssistCandidateStartedAt: TimeInterval?
+    private var motionStarted = false
 
     init() {
         authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
@@ -110,7 +111,6 @@ final class CameraSessionManager: ObservableObject {
             self.handleAudioSampleBuffer(sampleBuffer)
         }
         audioOutput.setSampleBufferDelegate(audioSampleBufferProxy, queue: audioOutputQueue)
-        intelligentCamera.startMotion()
         thermalObserver = NotificationCenter.default.addObserver(
             forName: ProcessInfo.thermalStateDidChangeNotification,
             object: nil,
@@ -146,7 +146,29 @@ final class CameraSessionManager: ObservableObject {
 
     func setAudioEnabled(_ enabled: Bool) {
         guard !recordingState.isRecording else { return }
-        audioMeter.isEnabled = enabled
+        if enabled && AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            Task {
+                let granted = await withCheckedContinuation { continuation in
+                    AVCaptureDevice.requestAccess(for: .audio) { granted in
+                        continuation.resume(returning: granted)
+                    }
+                }
+                await MainActor.run {
+                    self.audioMeter.isAuthorized = granted
+                    self.audioMeter.isEnabled = granted
+                    if !granted {
+                        self.lastError = "Microphone permission was not granted."
+                    }
+                    if let activeDevice = self.activeDevice {
+                        Task { await self.configure(device: activeDevice) }
+                    }
+                }
+            }
+            return
+        }
+
+        audioMeter.isEnabled = enabled && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        refreshAudioAuthorizationStatus()
         if let activeDevice {
             Task { await configure(device: activeDevice) }
         }
@@ -157,13 +179,6 @@ final class CameraSessionManager: ObservableObject {
             return
         }
 
-        if audioMeter.isEnabled && AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
-            _ = await withCheckedContinuation { continuation in
-                AVCaptureDevice.requestAccess(for: .audio) { granted in
-                    continuation.resume(returning: granted)
-                }
-            }
-        }
         refreshAudioAuthorizationStatus()
 
         let videoOutput = videoOutput
@@ -241,6 +256,7 @@ final class CameraSessionManager: ObservableObject {
             activeDevice = device
             activeDeviceID = device.uniqueID
             activeDeviceName = device.localizedName
+            startMotionIfNeeded()
             refreshState(for: device)
             lastError = nil
         case .failure(let error):
@@ -948,6 +964,12 @@ final class CameraSessionManager: ObservableObject {
         @unknown default:
             thermalState = ThermalStateLabel(title: "Unknown", isRisky: true)
         }
+    }
+
+    private func startMotionIfNeeded() {
+        guard !motionStarted else { return }
+        motionStarted = true
+        intelligentCamera.startMotion()
     }
 
     private func startProcessedRecording() {
